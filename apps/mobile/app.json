@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Formalio",
+    "slug": "formalio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "formalio",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "cm.formalio.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "cm.formalio.app"
+    },
+    "plugins": ["expo-router"]
+  }
+}
