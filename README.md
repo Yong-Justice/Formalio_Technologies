@@ -38,4 +38,22 @@
   - **Auth**: Supabase Auth
   - **Validation**: Zod
   - **Language**: TypeScript 5
+
+  ## About
+
+  **Formalio Technologies** is building the financial and document infrastructure for businesses across Cameroon and Central Africa — making professional-grade tools accessible, local, and built for the region.
+
+  ## Contact
+
+  | | |
+  |---|---|
+  | **Founder** | Yong Justice Animbom Numfor |
+  | **Email** | yongjustice8@gmail.com |
+  | **Company** | Formalio Technologies |
+
+  ## License
+
+  Copyright 2026 Formalio Technologies. All Rights Reserved.
+
+  Licensed under the [Apache License, Version 2.0](./LICENSE).
   
