@@ -1,28 +1,31 @@
-import { MMKV } from 'react-native-mmkv';
+import { MMKV } from "react-native-mmkv";
+  import { Env } from "@/config/env";
 
-export const storage = new MMKV({ id: 'formalio-local-cache' });
+  export const prefsStorage = new MMKV({ id: "formalio-prefs",       encryptionKey: Env.mmkvEncryptionKey });
+  export const queueStorage = new MMKV({ id: "formalio-queue",       encryptionKey: Env.mmkvEncryptionKey });
+  export const queryStorage = new MMKV({ id: "formalio-query-cache", encryptionKey: Env.mmkvEncryptionKey });
+  export const auditStorage = new MMKV({ id: "formalio-audit",       encryptionKey: Env.mmkvEncryptionKey });
 
-export const storageKeys = {
-  authUser: 'auth.user',
-  selectedBusinessId: 'business.selectedId',
-  businesses: 'businesses.cache',
-  transactions: 'transactions.cache',
-  reports: 'reports.cache',
-  offlineQueue: 'offline.queue',
-  onboardingCompleted: 'onboarding.completed',
-  language: 'settings.language'
-} as const;
+  export const storageKeys = {
+    prefs: { language: "prefs.language", onboardingCompleted: "prefs.onboardingCompleted", apiBaseUrlOverride: "prefs.apiBaseUrlOverride" },
+    queue: { offlineTransactions: "queue.offlineTransactions" },
+    query: {
+      reactQueryCache: "query.rqCache",
+      businesses: "query.businesses", selectedBusinessId: "query.selectedBusinessId",
+      transactions: "query.transactions", walletBalance: "query.walletBalance",
+      walletLastUpdated: "query.walletLastUpdated", creditScore: "query.creditScore",
+      creditScoreLastUpdated: "query.creditScoreLastUpdated", exchangeRates: "query.exchangeRates",
+      exchangeRatesLastUpdated: "query.exchangeRatesLastUpdated",
+    },
+    audit: { integrityLog: "audit.integrity_log" },
+  } as const;
 
-export function getJson<T>(key: string, fallback: T): T {
-  const raw = storage.getString(key);
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
+  export function getJson<T>(store: MMKV, key: string, fallback: T): T {
+    const raw = store.getString(key);
+    if (!raw) return fallback;
+    try { return JSON.parse(raw) as T; } catch { return fallback; }
   }
-}
-
-export function setJson<T>(key: string, value: T) {
-  storage.set(key, JSON.stringify(value));
-}
+  export function setJson<T>(store: MMKV, key: string, value: T): void {
+    store.set(key, JSON.stringify(value));
+  }
+  
