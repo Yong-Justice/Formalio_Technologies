@@ -54,8 +54,8 @@ Production deployment is currently linked to Supabase project `skxyktfeeozjzgsot
 2. In the Supabase dashboard, configure Auth providers:
    - Email/password enabled.
    - Email confirmations enabled.
-   - Custom SMTP enabled with the Resend credentials from [auth-verification.md](./auth-verification.md).
-   - SMS OTP enabled with the Twilio credentials from [auth-verification.md](./auth-verification.md).
+   - Supabase built-in auth email sender enabled for free MVP/testing mode.
+   - Custom SMTP and SMS OTP disabled until the paid provider upgrade points in [auth-verification.md](./auth-verification.md) are ready.
    - Google OAuth can be enabled after Google client ID/secret are available.
    - Apple OAuth can be enabled later with Apple developer credentials.
    - Add mobile redirect URLs such as `formalio://auth/callback` and `formalio://reset-password`.
@@ -98,5 +98,5 @@ npx expo start
 - Storage buckets are created: `profile-media`, `business-documents`, `kyc-documents`, `report-exports`.
 - Edge Functions are deployed and active: `analytics`, `reports-generate`, `ai-assistant`, `ocr-ticket`, `notifications`.
 - Auth is configured with email/password, email confirmation, 8-character minimum passwords, required lower/upper/digit characters, refresh token rotation, disabled anonymous sign-ins, and TOTP MFA support.
-- SMTP and SMS OTP provider credentials must be supplied before pushing the latest Auth provider config.
+- MVP auth currently uses Supabase built-in auth emails with custom SMTP and SMS disabled. This is suitable for controlled testing and preview builds, not high-volume public production delivery.
 - Supabase advisor checks report no warn-level issues after the hardening migrations.

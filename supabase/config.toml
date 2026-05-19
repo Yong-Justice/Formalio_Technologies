@@ -235,27 +235,16 @@ otp_length = 8
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Production SMTP. Set RESEND_SMTP_PASSWORD before pushing this config.
+# MVP/testing mode: use Supabase's built-in email sender.
+# Keep custom SMTP disabled until a domain and provider such as Resend are ready.
 [auth.email.smtp]
-enabled = true
-host = "smtp.resend.com"
-port = 465
-user = "resend"
-pass = "env(RESEND_SMTP_PASSWORD)"
-admin_email = "no-reply@auth.formalio.cm"
-sender_name = "Formalio"
-
-[auth.email.template.confirmation]
-subject = "Your Formalio verification code"
-content_path = "./templates/confirmation.html"
-
-[auth.email.template.recovery]
-subject = "Reset your Formalio password"
-content_path = "./templates/recovery.html"
-
-[auth.email.template.magic_link]
-subject = "Sign in to Formalio"
-content_path = "./templates/magic_link.html"
+enabled = false
+host = ""
+port = 587
+user = ""
+pass = ""
+admin_email = ""
+sender_name = ""
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
@@ -265,15 +254,13 @@ content_path = "./templates/magic_link.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
-enable_signup = true
+enable_signup = false
 # If enabled, users need to confirm their phone number before signing in.
-enable_confirmations = true
+enable_confirmations = false
 # Template for sending OTP to users
 template = "Formalio verification code: {{ .Code }}. It expires soon. Do not share this code."
 # Controls the minimum amount of time that must pass before sending another sms otp.
 max_frequency = "60s"
-otp_length = 6
-otp_expiry = 300
 
 # Use pre-defined map of phone number to OTP for testing.
 # [auth.sms.test_otp]
@@ -298,9 +285,9 @@ otp_expiry = 300
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
-enabled = true
-account_sid = "env(SUPABASE_AUTH_SMS_TWILIO_ACCOUNT_SID)"
-message_service_sid = "env(SUPABASE_AUTH_SMS_TWILIO_MESSAGE_SERVICE_SID)"
+enabled = false
+account_sid = ""
+message_service_sid = ""
 # DO NOT commit your Twilio auth token to git. Use environment variable substitution instead:
 auth_token = "env(SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN)"
 

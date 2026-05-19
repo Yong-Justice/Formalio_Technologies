@@ -1038,6 +1038,8 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
   const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
+  const [resendAvailableAt, setResendAvailableAt] = useState(0);
+  const [nowMs, setNowMs] = useState(Date.now());
   const [biometricLoading, setBiometricLoading] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricLabel, setBiometricLabel] = useState('Biométrie');
@@ -1077,7 +1079,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
   };
   const formatCredentialInput = (val: string) => {
     const phoneOnlyCharacters = /^[\d\s()+-]*$/.test(val);
-    return phoneOnlyCharacters && !val.includes('@') ? formatPhone(val) : val;
+    return phoneOnlyCharacters && !val.includes('@') ? formatPhone(val) : val.trim().toLowerCase();
   };
   const validatePhone = (val: string) => val.replace(/\D/g, '').length === 9;
   const validateEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -1094,19 +1096,15 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
     if (kind === 'phone') return validatePhone(val);
     return false;
   };
-  const normalizeCredential = (val: string) => {
-    const kind = getCredentialKind(val);
-    return {
-      kind,
-      value: kind === 'phone' ? val.replace(/\D/g, '') : val.trim().toLowerCase(),
-    };
-  };
   const navigate = (next: AuthScreen) => {
     setErrors({});
     setScreen(next);
   };
   const resetOtp = (length = 6) => setOtp(Array.from({ length }, () => ''));
   const otpValue = otp.join('');
+  const resendRemaining = Math.max(0, Math.ceil((resendAvailableAt - nowMs) / 1000));
+  const canResend = resendRemaining === 0 && !loading;
+  const startResendCooldown = () => setResendAvailableAt(Date.now() + 60000);
   const simulateLoading = (next: AuthScreen | (() => void), delay = 1200) => {
     setLoading(true);
     setTimeout(() => {
@@ -1115,6 +1113,12 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
       else setScreen(next);
     }, delay);
   };
+
+  useEffect(() => {
+    if (!resendAvailableAt) return undefined;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [resendAvailableAt]);
   const runBiometricAuth = async (mode: 'login' | 'setup' = 'login') => {
     setErrors({});
     setBiometricLoading(true);
@@ -1249,17 +1253,17 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
         <Txt style={styles.authSubtitle}>Connectez-vous à votre compte</Txt>
         <View style={{ marginTop: 24, gap: 15 }}>
           <Field
-            label="Email ou téléphone"
+            label="Email"
             value={credential}
             onChangeText={(value) => {
-              setCredential(formatCredentialInput(value));
+              setCredential(value.trim().toLowerCase());
               if (errors.credential) setErrors({});
             }}
             keyboardType="email-address"
-            placeholder="marie@boutique.cm ou 6XX XXX XXX"
-            icon={getCredentialKind(credential) === 'email' ? Mail : Phone}
+            placeholder="marie@boutique.cm"
+            icon={Mail}
             error={errors.credential}
-            right={validateCredential(credential) ? <Icon icon={Check} size={17} color={c.formalio600} /> : null}
+            right={validateEmail(credential) ? <Icon icon={Check} size={17} color={c.formalio600} /> : null}
           />
           <Field
             label="Mot de passe"
@@ -1286,25 +1290,22 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             icon={loading ? RefreshCw : ChevronRight}
             disabled={loading}
             onPress={() => {
-              const normalized = normalizeCredential(credential);
-              if (!validateCredential(credential)) return setErrors({ credential: 'Entrez un email valide ou un numéro de téléphone à 9 chiffres.' });
+              const normalizedEmail = credential.trim().toLowerCase();
+              if (!validateEmail(normalizedEmail)) return setErrors({ credential: 'Entrez un email valide.' });
               if (!validatePassword(password)) return setErrors({ password: '8+ caracteres avec majuscule, minuscule et chiffre.' });
-              setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
-              setEmail(normalized.kind === 'email' ? normalized.value : email);
+              setEmail(normalizedEmail);
               setLoading(true);
               formalioBackend
-                .signInWithEmailOrPhone(normalized.value, password)
+                .signInWithEmailOrPhone(normalizedEmail, password)
                 .then(() => {
-                  setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
-                  setEmail(normalized.kind === 'email' ? normalized.value : email);
+                  setEmail(normalizedEmail);
                   setScreen('welcome-back');
                 })
                 .catch((error) => {
                   if (formalioBackend.isConfigured) {
                     setErrors({ credential: error instanceof Error ? error.message : 'Connexion impossible.' });
                   } else {
-                    setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
-                    setEmail(normalized.kind === 'email' ? normalized.value : email);
+                    setEmail(normalizedEmail);
                     setScreen('welcome-back');
                   }
                 })
@@ -1312,15 +1313,6 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             }}
           />
           <Divider label="OU" />
-          <PrimaryButton
-            label="Connexion par code SMS"
-            tone="outline"
-            icon={Phone}
-            onPress={() => {
-              resetOtp(6);
-              navigate('phone');
-            }}
-          />
           <PrimaryButton label={biometricLoading ? 'Vérification...' : `Connexion ${biometricLabel}`} tone="outline" icon={biometricLoading ? RefreshCw : Fingerprint} disabled={biometricLoading} onPress={() => runBiometricAuth('login')} />
           {!biometricAvailable ? <Txt style={{ color: c.surface400, fontSize: 11, lineHeight: 16, textAlign: 'center' }}>La biométrie apparaîtra dès qu'elle sera enregistrée sur l'appareil.</Txt> : null}
         </View>
@@ -1341,6 +1333,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
         <Txt style={styles.authSubtitle}>Commencez en 2 minutes — c'est gratuit !</Txt>
         <View style={{ marginTop: 24, gap: 14 }}>
           <Field label="Nom complet" value={name} onChangeText={setName} placeholder="Marie Nkono" icon={User} />
+          {errors.name ? <ErrorLine text={errors.name} /> : null}
           <View>
             <Txt weight="semibold" style={styles.fieldLabel}>Numéro de téléphone</Txt>
             <View style={styles.inputBox}>
@@ -1350,7 +1343,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             </View>
             {errors.phone ? <ErrorLine text={errors.phone} /> : null}
           </View>
-          <Field label="Email professionnel" value={email} onChangeText={setEmail} placeholder="marie@boutique.cm" icon={Mail} keyboardType="email-address" />
+          <Field label="Email professionnel" value={email} onChangeText={(value) => setEmail(value.trim().toLowerCase())} placeholder="marie@boutique.cm" icon={Mail} keyboardType="email-address" />
           {errors.email ? <ErrorLine text={errors.email} /> : null}
           <Field
             label="Mot de passe"
@@ -1375,6 +1368,8 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
               <Txt style={{ marginTop: 5, color: c.surface500, fontSize: 11 }}>{strengthLabels[strength]}</Txt>
             </View>
           ) : null}
+          {errors.password ? <ErrorLine text={errors.password} /> : null}
+          {errors.confirm ? <ErrorLine text={errors.confirm} /> : null}
           <Field label="Confirmer le mot de passe" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="••••••••" icon={Lock} secureTextEntry />
           <PrimaryButton
             label={loading ? 'Création...' : 'Créer mon compte'}
@@ -1397,6 +1392,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
                       const targetEmail = email.trim().toLowerCase();
                       setOtpTarget(targetEmail);
                       resetOtp(8);
+                      startResendCooldown();
                       showToast({
                         type: 'info',
                         title: 'Email de verification envoye',
@@ -1427,7 +1423,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
         <Back target="signup" />
         <AnimatedMascot state="secure" size={130} />
         <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center' }]}>Verification email</Txt>
-        <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>Entrez le code envoye a {otpTarget || email} pour activer votre compte.</Txt>
+        <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>Entrez le code envoye a {otpTarget || email}, ou ouvrez le lien recu par email.</Txt>
         <View style={{ marginTop: 26, gap: 16, width: '100%' }}>
           <OtpBoxes otp={otp} setOtp={setOtp} />
           {errors.otp ? <ErrorLine text={errors.otp} /> : null}
@@ -1449,19 +1445,24 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             }}
           />
           <Tap
+            disabled={!canResend}
             onPress={() => {
+              if (!canResend) return;
               setLoading(true);
               formalioBackend
                 .resendEmailSignup(otpTarget || email)
                 .then(() => {
                   resetOtp(8);
+                  startResendCooldown();
                   showToast({ type: 'info', title: 'Code renvoye', message: 'Verifiez votre boite email.' });
                 })
                 .catch((error) => setErrors({ otp: error instanceof Error ? error.message : "Impossible de renvoyer le code." }))
                 .finally(() => setLoading(false));
             }}
           >
-            <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>Renvoyer le code</Txt>
+            <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>
+              {canResend ? 'Renvoyer le code' : `Renvoyer dans ${resendRemaining}s`}
+            </Txt>
           </Tap>
         </View>
       </View>
@@ -1477,7 +1478,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
           {screen === 'forgot-password' ? 'Recuperer votre acces' : screen === 'forgot-otp' ? 'Code de verification' : 'Nouveau mot de passe'}
         </Txt>
         <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>
-          {screen === 'forgot-password' ? 'Recevez un code par email pour reinitialiser votre mot de passe.' : screen === 'forgot-otp' ? 'Entrez le code envoye a votre email.' : 'Choisissez un mot de passe solide pour proteger vos donnees.'}
+          {screen === 'forgot-password' ? 'Recevez un code ou un lien par email pour reinitialiser votre mot de passe.' : screen === 'forgot-otp' ? 'Entrez le code envoye a votre email, ou ouvrez le lien recu.' : 'Choisissez un mot de passe solide pour proteger vos donnees.'}
         </Txt>
         <View style={{ marginTop: 26, gap: 14, width: '100%' }}>
           {screen === 'forgot-password' ? (
@@ -1501,6 +1502,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
                 const targetEmail = credential.trim().toLowerCase();
                 setOtpTarget(targetEmail);
                 resetOtp(8);
+                startResendCooldown();
                 setLoading(true);
                 formalioBackend
                   .resetPassword(targetEmail)
@@ -1541,19 +1543,24 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
           />
           {screen === 'forgot-otp' ? (
             <Tap
+              disabled={!canResend}
               onPress={() => {
+                if (!canResend) return;
                 setLoading(true);
                 formalioBackend
                   .resetPassword(otpTarget || credential)
                   .then(() => {
                     resetOtp(8);
+                    startResendCooldown();
                     showToast({ type: 'info', title: 'Code renvoye', message: 'Verifiez votre boite email.' });
                   })
                   .catch((error) => setErrors({ otp: error instanceof Error ? error.message : "Impossible de renvoyer le code." }))
                   .finally(() => setLoading(false));
               }}
             >
-              <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>Renvoyer le code</Txt>
+              <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>
+                {canResend ? 'Renvoyer le code' : `Renvoyer dans ${resendRemaining}s`}
+              </Txt>
             </Tap>
           ) : null}
         </View>

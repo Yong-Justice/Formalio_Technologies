@@ -1,112 +1,104 @@
-# Formalio Auth Verification Runbook
+# Formalio Free MVP Auth Verification
 
-This runbook describes the production setup required for email verification, password recovery, and SMS OTP in Supabase Auth.
+Formalio is currently configured for Supabase free-tier authentication without a custom domain, custom SMTP provider, or paid SMS provider.
 
-## Current Project State
+## Current Free/Testing Mode
 
-- Supabase project: `skxyktfeeozjzgsotekp`.
-- Email/password auth is enabled.
+- Email/password signup is enabled.
 - Email confirmation is enabled.
+- Forgot password and password reset use Supabase Auth recovery emails.
+- Resend verification uses Supabase Auth resend.
+- Session persistence is handled by `@supabase/supabase-js` with Expo AsyncStorage.
 - Anonymous sign-ins are disabled.
-- Passwords require at least 8 characters with lowercase, uppercase, and digits.
-- Custom SMTP is not active until the Resend SMTP secret is provided and `supabase config push` is run.
-- Phone/SMS auth must not be pushed live until Twilio credentials are available.
+- SMS OTP is disabled for MVP mode.
+- Custom SMTP is disabled.
+- Custom email templates are not active; Supabase hosted default auth emails are used.
 
-## Required Email Provider Setup
+Supabase's built-in email provider is suitable for MVP testing and preview builds, but it has very low delivery limits, may restrict delivery to authorized/team email addresses, and has no production deliverability guarantee.
 
-Recommended MVP provider: Resend.
+## What Works Now
 
-Create or provide:
+- Signup creates a Supabase Auth user and blocks access until email verification completes.
+- The app shows an email OTP screen after signup.
+- Users can request another signup verification email with a 60-second resend cooldown.
+- Login uses email and password only.
+- Unverified users cannot log in because Supabase email confirmation is required.
+- Forgot password sends a Supabase recovery email.
+- Recovery OTP verification opens the password reset screen.
+- Password reset updates the authenticated recovery session password.
 
-- Resend account.
-- Sending domain, recommended: `auth.formalio.cm` or `formalio.cm`.
-- SMTP password/API key from Resend.
-- Sender address: `no-reply@auth.formalio.cm`.
-- DNS records from Resend:
-  - SPF/TXT.
-  - DKIM records.
-  - DMARC record.
-  - Optional custom return-path/bounce record if offered.
+## Free-Tier Limitations
 
-Supabase settings:
+- Supabase built-in email sender is rate-limited. Current Supabase docs list 2 auth emails per hour for the built-in provider.
+- Some hosted Supabase projects only deliver built-in auth emails to addresses authorized through the Supabase organization/team while custom SMTP is disabled.
+- Sender domain is controlled by Supabase, not Formalio.
+- Deliverability is best effort.
+- SMS OTP is not available without configuring an SMS provider.
+- Branded email templates are not active in this mode.
 
-- Custom SMTP enabled.
-- SMTP host: `smtp.resend.com`.
-- SMTP port: `465`.
-- SMTP user: `resend`.
-- SMTP password: `RESEND_SMTP_PASSWORD`.
-- Sender email: `no-reply@auth.formalio.cm`.
-- Sender name: `Formalio`.
-- Email confirmation enabled.
-- Password recovery enabled through Supabase Auth.
-- Redirect URLs include:
-  - `formalio://auth/callback`
-  - `formalio://reset-password`
-  - development Expo URLs.
+## Current Supabase Settings
 
-## Required SMS Provider Setup
+- `auth.email.enable_signup = true`
+- `auth.email.enable_confirmations = true`
+- `auth.email.otp_length = 8`
+- `auth.email.otp_expiry = 3600`
+- `auth.email.smtp.enabled = false`
+- `auth.sms.enable_signup = false`
+- `auth.sms.enable_confirmations = false`
+- `auth.sms.twilio.enabled = false`
+- Refresh token rotation enabled.
+- Minimum password length: 8.
+- Password requirements: lowercase, uppercase, and digits.
 
-Recommended MVP provider: Twilio Verify or Twilio Messaging Service through Supabase Auth.
+## Environment Variables Needed Now
 
-Create or provide:
-
-- Twilio account with billing enabled.
-- Messaging Service SID.
-- Account SID.
-- Auth token.
-- Sender setup approved for target countries.
-- Cameroon and target market coverage confirmed in Twilio's country pricing/coverage pages.
-- Alphanumeric sender ID or long code/short code where required by local regulation.
-
-Supabase settings:
-
-- Phone provider enabled.
-- Phone signup enabled if phone-only accounts are allowed.
-- Phone confirmation enabled.
-- OTP length: 6.
-- OTP expiry: 5 minutes.
-- SMS resend frequency: 60 seconds.
-- SMS template: `Formalio verification code: {{ .Code }}. It expires soon. Do not share this code.`
-
-## Deployment Commands
-
-Set server-only environment variables locally for config push:
+Only public Expo/Supabase values are needed for MVP auth:
 
 ```bash
-set RESEND_SMTP_PASSWORD=re_xxx
-set SUPABASE_AUTH_SMS_TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-set SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-set SUPABASE_AUTH_SMS_TWILIO_MESSAGE_SERVICE_SID=MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EXPO_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
+EXPO_PUBLIC_API_BASE_URL=https://<project-ref>.supabase.co/functions/v1
 ```
 
-Then push the Supabase Auth config:
+No Resend, Twilio, SPF, DKIM, DMARC, or custom domain is required for the current MVP flow.
 
-```bash
-npx supabase config push --project-ref skxyktfeeozjzgsotekp
-```
+## Future Upgrade Points
 
-Verify:
+Custom SMTP with Resend:
 
-```bash
-npx supabase db advisors --linked --type all --level warn --fail-on none
-```
+- Buy or configure a sending domain such as `auth.formalio.cm`.
+- Add SPF, DKIM, and DMARC DNS records.
+- Create a Resend API/SMTP key.
+- Set `RESEND_SMTP_PASSWORD` as a server-only secret.
+- Enable `[auth.email.smtp]` in `supabase/config.toml`.
+- Optionally activate the branded templates in `supabase/templates/`.
 
-## Frontend Flows
+SMS OTP with Twilio:
 
-- Signup sends a Supabase email confirmation code/link.
-- The app shows an email OTP screen and verifies `type: signup`.
-- Resend verification calls Supabase Auth resend for `signup`.
-- Forgot password sends a recovery code/link.
-- Recovery OTP verifies `type: recovery`, then updates the password.
-- SMS login sends OTP with `signInWithOtp` and verifies `type: sms`.
-- SMS resend calls Supabase Auth resend for `sms`.
+- Create a Twilio account with billing enabled.
+- Create a Messaging Service.
+- Add `SUPABASE_AUTH_SMS_TWILIO_ACCOUNT_SID`.
+- Add `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`.
+- Add `SUPABASE_AUTH_SMS_TWILIO_MESSAGE_SERVICE_SID`.
+- Enable `[auth.sms]` and `[auth.sms.twilio]` in `supabase/config.toml`.
+- Re-enable the SMS OTP UI in the Expo auth flow.
 
-## Security Minimums
+Production anti-abuse:
 
-- Rotate any leaked access tokens immediately.
-- Never expose SMTP, Twilio, service role, or secret keys to Expo.
-- Keep anonymous sign-ins disabled.
-- Keep refresh token rotation enabled.
-- Use CAPTCHA once public signup traffic starts.
-- Add monitoring for Auth error spikes and SMS/email send failures.
-- Use invite-only or waitlist gating if fake account abuse appears during launch.
+- Enable CAPTCHA in Supabase Auth before public launch traffic.
+- Increase email/SMS limits only after real providers are configured.
+- Monitor Supabase Auth logs for failed OTP and recovery attempts.
+- Keep service-role, SMTP, and SMS provider credentials server-only.
+
+## Verification Checklist
+
+1. Run `npx supabase config push --project-ref skxyktfeeozjzgsotekp`.
+2. Open the app with `npx expo start`.
+3. Create an account with a real email address.
+4. Confirm that a Supabase email arrives.
+5. Enter the 8-digit code if shown, or open the confirmation link from the email.
+6. Confirm the app does not enter the dashboard before verification.
+7. Test resend after the 60-second cooldown.
+8. Test forgot password with the same email.
+9. Enter the recovery code if shown, or open the recovery link.
+10. Set a new password and log in.
