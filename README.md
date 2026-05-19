@@ -40,7 +40,7 @@ formalio/
 
 ## Backend
 
-Formalio now includes a deployed Supabase production backend: Postgres schema, Row Level Security, Storage buckets, Edge Functions, Auth configuration, and Expo integration services. Deployment and operations are documented in [docs/backend-supabase.md](./docs/backend-supabase.md).
+Formalio now includes a deployed Supabase production backend: Postgres schema, Row Level Security, Storage buckets, Edge Functions, Auth configuration, and Expo integration services. Deployment and operations are documented in [docs/backend-supabase.md](./docs/backend-supabase.md), with verification provider setup in [docs/auth-verification.md](./docs/auth-verification.md).
 
 ## Mobile
 

@@ -74,6 +74,7 @@ function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 9) return `+237${digits}`;
   if (digits.startsWith('237')) return `+${digits}`;
+  if (digits.length && phone.trim().startsWith('+')) return `+${digits}`;
   return phone.trim();
 }
 
@@ -200,6 +201,7 @@ export const formalioBackend = {
       email: payload.email.trim().toLowerCase(),
       password: payload.password,
       options: {
+        emailRedirectTo: 'formalio://auth/callback',
         data: {
           full_name: payload.fullName.trim(),
           phone: normalizePhone(payload.phone),
@@ -209,6 +211,74 @@ export const formalioBackend = {
     });
     if (error) throw error;
     return data;
+  },
+
+  async resendEmailSignup(email: string) {
+    if (!isSupabaseConfigured) return;
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: 'formalio://auth/callback' },
+    });
+    if (error) throw error;
+  },
+
+  async verifyEmailSignupOtp(email: string, token: string) {
+    if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token,
+      type: 'signup',
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async signInWithPhoneOtp(phone: string, shouldCreateUser = false) {
+    if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase.auth.signInWithOtp({
+      phone: normalizePhone(phone),
+      options: { shouldCreateUser, channel: 'sms' },
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async resendPhoneOtp(phone: string) {
+    if (!isSupabaseConfigured) return;
+    const { error } = await supabase.auth.resend({
+      type: 'sms',
+      phone: normalizePhone(phone),
+    });
+    if (error) throw error;
+  },
+
+  async verifyPhoneOtp(phone: string, token: string) {
+    if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: normalizePhone(phone),
+      token,
+      type: 'sms',
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async verifyRecoveryOtp(email: string, token: string) {
+    if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token,
+      type: 'recovery',
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async updatePassword(password: string) {
+    if (!isSupabaseConfigured) return;
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
   },
 
   async signOut() {

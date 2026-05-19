@@ -231,6 +231,7 @@ type AuthScreen =
   | 'welcome'
   | 'login'
   | 'signup'
+  | 'email-otp'
   | 'forgot-password'
   | 'forgot-otp'
   | 'reset-password'
@@ -1027,6 +1028,7 @@ function HeaderUtilityActions({
 function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void }) {
   const { showToast } = useToast();
   const [screen, setScreen] = useState<AuthScreen>('splash');
+  const [otpTarget, setOtpTarget] = useState('');
   const [credential, setCredential] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -1079,7 +1081,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
   };
   const validatePhone = (val: string) => val.replace(/\D/g, '').length === 9;
   const validateEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
-  const validatePassword = (val: string) => val.length >= 8;
+  const validatePassword = (val: string) => val.length >= 8 && /[a-z]/.test(val) && /[A-Z]/.test(val) && /[0-9]/.test(val);
   const getCredentialKind = (val: string): 'email' | 'phone' | 'unknown' => {
     const trimmed = val.trim();
     if (trimmed.includes('@')) return 'email';
@@ -1103,6 +1105,8 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
     setErrors({});
     setScreen(next);
   };
+  const resetOtp = (length = 6) => setOtp(Array.from({ length }, () => ''));
+  const otpValue = otp.join('');
   const simulateLoading = (next: AuthScreen | (() => void), delay = 1200) => {
     setLoading(true);
     setTimeout(() => {
@@ -1284,7 +1288,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             onPress={() => {
               const normalized = normalizeCredential(credential);
               if (!validateCredential(credential)) return setErrors({ credential: 'Entrez un email valide ou un numéro de téléphone à 9 chiffres.' });
-              if (!validatePassword(password)) return setErrors({ password: 'Minimum 8 caractères' });
+              if (!validatePassword(password)) return setErrors({ password: '8+ caracteres avec majuscule, minuscule et chiffre.' });
               setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
               setEmail(normalized.kind === 'email' ? normalized.value : email);
               setLoading(true);
@@ -1308,7 +1312,15 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             }}
           />
           <Divider label="OU" />
-          <PrimaryButton label="Connexion par code SMS" tone="outline" icon={Phone} onPress={() => navigate('phone')} />
+          <PrimaryButton
+            label="Connexion par code SMS"
+            tone="outline"
+            icon={Phone}
+            onPress={() => {
+              resetOtp(6);
+              navigate('phone');
+            }}
+          />
           <PrimaryButton label={biometricLoading ? 'Vérification...' : `Connexion ${biometricLabel}`} tone="outline" icon={biometricLoading ? RefreshCw : Fingerprint} disabled={biometricLoading} onPress={() => runBiometricAuth('login')} />
           {!biometricAvailable ? <Txt style={{ color: c.surface400, fontSize: 11, lineHeight: 16, textAlign: 'center' }}>La biométrie apparaîtra dès qu'elle sera enregistrée sur l'appareil.</Txt> : null}
         </View>
@@ -1344,7 +1356,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             label="Mot de passe"
             value={password}
             onChangeText={setPassword}
-            placeholder="Minimum 8 caractères"
+            placeholder="8+ caracteres, majuscule et chiffre"
             icon={Lock}
             secureTextEntry={!showPassword}
             right={
@@ -1373,7 +1385,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
               if (!name.trim()) nextErrors.name = 'Nom requis';
               if (!validatePhone(phone)) nextErrors.phone = 'Numéro invalide';
               if (!validateEmail(email)) nextErrors.email = 'Email invalide';
-              if (!validatePassword(password)) nextErrors.password = 'Minimum 8 caractères';
+              if (!validatePassword(password)) nextErrors.password = '8+ caracteres avec majuscule, minuscule et chiffre.';
               if (password !== confirmPassword) nextErrors.confirm = 'Les mots de passe ne correspondent pas';
               setErrors(nextErrors);
               if (Object.keys(nextErrors).length === 0) {
@@ -1382,12 +1394,15 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
                   .signUp({ email, password, fullName: name, phone })
                   .then((result) => {
                     if (formalioBackend.isConfigured && !result?.session) {
+                      const targetEmail = email.trim().toLowerCase();
+                      setOtpTarget(targetEmail);
+                      resetOtp(8);
                       showToast({
                         type: 'info',
                         title: 'Email de verification envoye',
-                        message: 'Confirmez votre email, puis connectez-vous pour activer Formalio.',
+                        message: 'Entrez le code recu par email pour activer Formalio.',
                       });
-                      setScreen('login');
+                      setScreen('email-otp');
                       return;
                     }
                     setScreen('biometric-setup');
@@ -1406,7 +1421,147 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
     );
   }
 
-  if (screen === 'forgot-password' || screen === 'forgot-otp' || screen === 'reset-password') {
+  if (screen === 'email-otp') {
+    return shell(
+      <View style={styles.formScreen}>
+        <Back target="signup" />
+        <AnimatedMascot state="secure" size={130} />
+        <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center' }]}>Verification email</Txt>
+        <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>Entrez le code envoye a {otpTarget || email} pour activer votre compte.</Txt>
+        <View style={{ marginTop: 26, gap: 16, width: '100%' }}>
+          <OtpBoxes otp={otp} setOtp={setOtp} />
+          {errors.otp ? <ErrorLine text={errors.otp} /> : null}
+          <PrimaryButton
+            label={loading ? 'Verification...' : 'Verifier le code'}
+            icon={loading ? RefreshCw : Check}
+            disabled={loading}
+            onPress={() => {
+              if (otpValue.length < 8) return setErrors({ otp: 'Entrez le code a 8 chiffres.' });
+              setLoading(true);
+              formalioBackend
+                .verifyEmailSignupOtp(otpTarget || email, otpValue)
+                .then(() => {
+                  showToast({ type: 'success', title: 'Email verifie', message: 'Votre compte Formalio est active.' });
+                  setScreen('biometric-setup');
+                })
+                .catch((error) => setErrors({ otp: error instanceof Error ? error.message : 'Code invalide ou expire.' }))
+                .finally(() => setLoading(false));
+            }}
+          />
+          <Tap
+            onPress={() => {
+              setLoading(true);
+              formalioBackend
+                .resendEmailSignup(otpTarget || email)
+                .then(() => {
+                  resetOtp(8);
+                  showToast({ type: 'info', title: 'Code renvoye', message: 'Verifiez votre boite email.' });
+                })
+                .catch((error) => setErrors({ otp: error instanceof Error ? error.message : "Impossible de renvoyer le code." }))
+                .finally(() => setLoading(false));
+            }}
+          >
+            <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>Renvoyer le code</Txt>
+          </Tap>
+        </View>
+      </View>
+    );
+  }
+
+  if ((screen as AuthScreen) === 'forgot-password' || (screen as AuthScreen) === 'forgot-otp' || (screen as AuthScreen) === 'reset-password') {
+    return shell(
+      <View style={styles.formScreen}>
+        <Back target="login" />
+        <AnimatedMascot state={screen === 'reset-password' ? 'secure' : 'thinking'} size={130} />
+        <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center' }]}>
+          {screen === 'forgot-password' ? 'Recuperer votre acces' : screen === 'forgot-otp' ? 'Code de verification' : 'Nouveau mot de passe'}
+        </Txt>
+        <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>
+          {screen === 'forgot-password' ? 'Recevez un code par email pour reinitialiser votre mot de passe.' : screen === 'forgot-otp' ? 'Entrez le code envoye a votre email.' : 'Choisissez un mot de passe solide pour proteger vos donnees.'}
+        </Txt>
+        <View style={{ marginTop: 26, gap: 14, width: '100%' }}>
+          {screen === 'forgot-password' ? (
+            <Field label="Email" value={credential} onChangeText={(value) => setCredential(formatCredentialInput(value))} placeholder="marie@boutique.cm" icon={Mail} keyboardType="email-address" error={errors.credential} />
+          ) : screen === 'forgot-otp' ? (
+            <OtpBoxes otp={otp} setOtp={setOtp} />
+          ) : (
+            <>
+              <Field value={password} onChangeText={setPassword} placeholder="Nouveau mot de passe" icon={Lock} secureTextEntry />
+              <Field value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirmer" icon={Lock} secureTextEntry />
+            </>
+          )}
+          {errors.otp ? <ErrorLine text={errors.otp} /> : null}
+          {errors.password ? <ErrorLine text={errors.password} /> : null}
+          <PrimaryButton
+            label={loading ? 'Patientez...' : screen === 'forgot-password' ? 'Envoyer le code' : screen === 'forgot-otp' ? 'Verifier' : 'Reinitialiser'}
+            disabled={loading}
+            onPress={() => {
+              if (screen === 'forgot-password' && !validateEmail(credential)) return setErrors({ credential: 'Entrez un email valide.' });
+              if (screen === 'forgot-password') {
+                const targetEmail = credential.trim().toLowerCase();
+                setOtpTarget(targetEmail);
+                resetOtp(8);
+                setLoading(true);
+                formalioBackend
+                  .resetPassword(targetEmail)
+                  .then(() => {
+                    showToast({ type: 'info', title: 'Code envoye', message: 'Consultez votre email pour recuperer le compte.' });
+                    navigate('forgot-otp');
+                  })
+                  .catch((error) => {
+                    if (formalioBackend.isConfigured) setErrors({ credential: error instanceof Error ? error.message : "Impossible d'envoyer le code." });
+                    else navigate('forgot-otp');
+                  })
+                  .finally(() => setLoading(false));
+                return;
+              }
+              if (screen === 'forgot-otp') {
+                if (otpValue.length < 8) return setErrors({ otp: 'Entrez le code a 8 chiffres.' });
+                setLoading(true);
+                formalioBackend
+                  .verifyRecoveryOtp(otpTarget || credential, otpValue)
+                  .then(() => navigate('reset-password'))
+                  .catch((error) => setErrors({ otp: error instanceof Error ? error.message : 'Code invalide ou expire.' }))
+                  .finally(() => setLoading(false));
+                return;
+              }
+              if (!validatePassword(password)) return setErrors({ password: '8+ caracteres avec majuscule, minuscule et chiffre.' });
+              if (password !== confirmPassword) return setErrors({ password: 'Les mots de passe ne correspondent pas.' });
+              setLoading(true);
+              formalioBackend
+                .updatePassword(password)
+                .then(async () => {
+                  showToast({ type: 'success', title: 'Mot de passe modifie', message: 'Vous pouvez maintenant vous connecter.' });
+                  await formalioBackend.signOut();
+                  navigate('login');
+                })
+                .catch((error) => setErrors({ password: error instanceof Error ? error.message : 'Reinitialisation impossible.' }))
+                .finally(() => setLoading(false));
+            }}
+          />
+          {screen === 'forgot-otp' ? (
+            <Tap
+              onPress={() => {
+                setLoading(true);
+                formalioBackend
+                  .resetPassword(otpTarget || credential)
+                  .then(() => {
+                    resetOtp(8);
+                    showToast({ type: 'info', title: 'Code renvoye', message: 'Verifiez votre boite email.' });
+                  })
+                  .catch((error) => setErrors({ otp: error instanceof Error ? error.message : "Impossible de renvoyer le code." }))
+                  .finally(() => setLoading(false));
+              }}
+            >
+              <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>Renvoyer le code</Txt>
+            </Tap>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
+
+  if ((screen as AuthScreen) === 'forgot-password' || (screen as AuthScreen) === 'forgot-otp' || (screen as AuthScreen) === 'reset-password') {
     return shell(
       <View style={styles.formScreen}>
         <Back target="login" />
@@ -1458,7 +1613,48 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
     );
   }
 
-  if (screen === 'phone') {
+  if ((screen as AuthScreen) === 'phone') {
+    return shell(
+      <View style={styles.formScreen}>
+        <Back target="login" />
+        <AnimatedMascot state="secure" size={145} />
+        <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center' }]}>Connexion SMS</Txt>
+        <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>Entrez votre numero. Formalio vous enverra un code OTP par SMS.</Txt>
+        <View style={{ marginTop: 28, gap: 16 }}>
+          <View style={styles.inputBox}>
+            <Txt weight="medium" style={{ fontSize: 13, color: c.surface700 }}>CM +237</Txt>
+            <View style={styles.vDivider} />
+            <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} style={styles.textInput} />
+          </View>
+          {errors.phone ? <ErrorLine text={errors.phone} /> : null}
+          <PrimaryButton
+            label={loading ? 'Envoi...' : 'Recevoir le code'}
+            icon={loading ? RefreshCw : ChevronRight}
+            disabled={loading}
+            onPress={() => {
+              if (!validatePhone(phone)) return setErrors({ phone: 'Entrez un numero camerounais a 9 chiffres.' });
+              setOtpTarget(phone);
+              resetOtp(6);
+              setLoading(true);
+              formalioBackend
+                .signInWithPhoneOtp(phone, false)
+                .then(() => {
+                  showToast({ type: 'info', title: 'Code SMS envoye', message: 'Entrez le code recu sur votre telephone.' });
+                  navigate('otp');
+                })
+                .catch((error) => {
+                  if (formalioBackend.isConfigured) setErrors({ phone: error instanceof Error ? error.message : 'Impossible d envoyer le SMS.' });
+                  else navigate('otp');
+                })
+                .finally(() => setLoading(false));
+            }}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  if ((screen as AuthScreen) === 'phone') {
     return shell(
       <View style={styles.formScreen}>
         <Back target="signup" />
@@ -1477,7 +1673,53 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
     );
   }
 
-  if (screen === 'otp') {
+  if ((screen as AuthScreen) === 'otp') {
+    return shell(
+      <View style={styles.formScreen}>
+        <Back target="phone" />
+        <AnimatedMascot state="thinking" size={145} />
+        <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center' }]}>Entrez le code SMS</Txt>
+        <Txt style={[styles.authSubtitle, { textAlign: 'center' }]}>Code envoye au +237 {phone || '6XX XXX XXX'}</Txt>
+        <View style={{ marginTop: 28, gap: 20 }}>
+          <OtpBoxes otp={otp} setOtp={setOtp} />
+          {errors.otp ? <ErrorLine text={errors.otp} /> : null}
+          <PrimaryButton
+            label={loading ? 'Verification...' : 'Verifier'}
+            disabled={loading}
+            onPress={() => {
+              if (otpValue.length < 6) return setErrors({ otp: 'Entrez le code a 6 chiffres.' });
+              setLoading(true);
+              formalioBackend
+                .verifyPhoneOtp(otpTarget || phone, otpValue)
+                .then(() => {
+                  showToast({ type: 'success', title: 'Telephone verifie', message: 'Connexion securisee active.' });
+                  onComplete(false);
+                })
+                .catch((error) => setErrors({ otp: error instanceof Error ? error.message : 'Code SMS invalide ou expire.' }))
+                .finally(() => setLoading(false));
+            }}
+          />
+          <Tap
+            onPress={() => {
+              setLoading(true);
+              formalioBackend
+                .resendPhoneOtp(otpTarget || phone)
+                .then(() => {
+                  resetOtp(6);
+                  showToast({ type: 'info', title: 'Code renvoye', message: 'Verifiez vos SMS.' });
+                })
+                .catch((error) => setErrors({ otp: error instanceof Error ? error.message : 'Impossible de renvoyer le SMS.' }))
+                .finally(() => setLoading(false));
+            }}
+          >
+            <Txt weight="semibold" style={{ color: c.formalio700, textAlign: 'center', fontSize: 12 }}>Renvoyer le code</Txt>
+          </Tap>
+        </View>
+      </View>
+    );
+  }
+
+  if ((screen as AuthScreen) === 'otp') {
     return shell(
       <View style={styles.formScreen}>
         <Back target="phone" />
