@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
   import * as LocalAuthentication from "expo-local-authentication";
+  import { analytics } from "@/services/analytics/analytics.service";
 
   type BiometricType = "fingerprint" | "facial" | "iris" | "none";
 
@@ -44,6 +45,10 @@ import { useState, useEffect } from "react";
         fallbackLabel: "Use PIN",
         cancelLabel: "Cancel",
         disableDeviceFallback: false,
+      });
+
+      analytics.track(result.success ? "biometric_auth_succeeded" : "biometric_auth_failed", {
+        biometricType,
       });
 
       return result.success;

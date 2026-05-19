@@ -1,5 +1,3 @@
-import { fetch as pinnedFetch } from "react-native-ssl-pinning";
-
   /**
    * SSL Certificate Pinning — Formalio Technologies
    *
@@ -50,14 +48,39 @@ import { fetch as pinnedFetch } from "react-native-ssl-pinning";
     json: T;
   };
 
+  type PinnedFetch = (url: string, options: Record<string, unknown>) => Promise<{
+    status: number;
+    headers: unknown;
+    json?: unknown | (() => Promise<unknown>);
+  }>;
+
+  function resolvePinnedFetch(): PinnedFetch {
+    try {
+      return require("react-native-ssl-pinning").fetch as PinnedFetch;
+    } catch {
+      return async (url, options) => {
+        const response = await fetch(url, {
+          method: options.method as string | undefined,
+          headers: options.headers as HeadersInit | undefined,
+          body: options.body as BodyInit | undefined,
+        });
+        return {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          json: () => response.json(),
+        };
+      };
+    }
+  }
+
   async function pinnedRequest<T = unknown>(
     path: string,
     options: PinnedRequestOptions = {}
   ): Promise<PinnedResponse<T>> {
     const { method = "GET", headers: extraHeaders = {}, body, timeoutInterval = 10000 } = options;
 
-    const response = await pinnedFetch(`${API_BASE_URL}${path}`, {
-      method,
+    const response = await resolvePinnedFetch()(`${API_BASE_URL}${path}`, {
+      method: method as "GET" | "POST" | "PUT" | "DELETE",
       timeoutInterval,
       sslPinning: {
         // Provide both pins — library accepts either a match
@@ -71,7 +94,13 @@ import { fetch as pinnedFetch } from "react-native-ssl-pinning";
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
 
-    return response as PinnedResponse<T>;
+    const json = typeof response.json === "function" ? await response.json() : (response as unknown as PinnedResponse<T>).json;
+
+    return {
+      status: response.status,
+      headers: response.headers as Record<string, string>,
+      json: json as T,
+    };
   }
 
   // ---------------------------------------------------------------------------

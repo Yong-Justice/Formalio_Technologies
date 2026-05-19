@@ -5,6 +5,7 @@ export const endpoints = {
     exchange: { rates: '/exchange-rates' },
     ai: { categorize: '/ai/categorize', chat: '/ai/chat', insights: '/ai/insights', document: '/ai/document' },
     payments: { checkout: '/payments/notchpay/checkout', subscription: '/subscriptions/me', invoices: '/subscriptions/invoices' },
+    notifications: { devices: '/notifications/devices' },
     integrations: { momoCsvImport: (b: string) => `/businesses/${b}/integrations/momo/csv-import`, whatsappBot: '/integrations/whatsapp/messages' },
     security: { deviceIntegrity: '/security/device-integrity' },
   } as const;

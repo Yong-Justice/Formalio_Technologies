@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { createUuid } from "@/utils/uuid";
   import { financialRequest } from "@/services/api/client";
   import { queueStorage, queryStorage, getJson, setJson, storageKeys } from "@/services/storage/mmkv";
   import type { Transaction } from "@/types/domain";
@@ -38,7 +38,7 @@ import { v4 as uuidv4 } from "uuid";
   }
 
   export function enqueueRequest(opts: EnqueueOptions): string {
-    const id = opts.id ?? uuidv4();
+    const id = opts.id ?? createUuid();
     const item: QueueItem = {
       id, method: opts.method, url: opts.url, body: opts.body,
       optimisticData: opts.optimisticData,

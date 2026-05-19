@@ -1,4 +1,3 @@
-import JailMonkey from "react-native-jail-monkey";
   import { apiClient } from "@/services/api/client";
   import { secureStorage, secureKeys } from "@/services/storage/secureStorage";
   import { auditStorage } from "@/services/storage/mmkv";
@@ -8,7 +7,26 @@ import JailMonkey from "react-native-jail-monkey";
     reasons: string[];
   };
 
+  type JailMonkeyModule = {
+    isJailBroken: () => boolean;
+    hookDetected: () => boolean;
+    canMockLocation: () => boolean;
+    isOnExternalStorage: () => boolean;
+    AdbEnabled: () => boolean;
+  };
+
+  function resolveJailMonkey(): JailMonkeyModule | null {
+    try {
+      return require("jail-monkey").default ?? require("jail-monkey");
+    } catch {
+      return null;
+    }
+  }
+
   export function checkDeviceIntegrity(): IntegrityResult {
+    const JailMonkey = resolveJailMonkey();
+    if (!JailMonkey) return { isCompromised: false, reasons: [] };
+
     const reasons: string[] = [];
     if (JailMonkey.isJailBroken())       reasons.push("rooted_or_jailbroken");
     if (JailMonkey.hookDetected())        reasons.push("runtime_hook_detected");

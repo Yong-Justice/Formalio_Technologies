@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Screen } from '@/components/layout/Screen';
 import { Button } from '@/components/ui/Button';
@@ -22,7 +23,13 @@ export default function OnboardingScreen() {
     <Screen>
       <View className="min-h-[650px] justify-between">
         <View className="items-center pt-10">
-          <Image source={require('../../assets/images/onboarding-1.png')} className="h-64 w-64 rounded-3xl" resizeMode="contain" />
+          <Image
+            source={require('../../assets/images/onboarding-1.png')}
+            style={{ width: 256, height: 256, borderRadius: 28 }}
+            contentFit="contain"
+            placeholder="L6PZfSi_.AyE_3t7t7R**0o#DgR4"
+            transition={180}
+          />
           <Text className="mt-8 text-center text-3xl font-black text-navy">{slide.title}</Text>
           <Text className="mt-3 text-center text-base leading-6 text-surface-500">{slide.copy}</Text>
           <View className="mt-8 flex-row gap-2">

@@ -1,7 +1,14 @@
 import { z } from 'zod';
 
+const emailOrPhone = z.string().min(3, 'Téléphone ou email requis').refine((value) => {
+  const trimmed = value.trim();
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+  const isPhone = trimmed.replace(/\D/g, '').length >= 9;
+  return isEmail || isPhone;
+}, 'Entrez un email valide ou un numéro de téléphone');
+
 export const loginSchema = z.object({
-  identifier: z.string().min(3, 'Téléphone ou email requis'),
+  identifier: emailOrPhone,
   password: z.string().min(8, 'Mot de passe minimum 8 caractères')
 });
 

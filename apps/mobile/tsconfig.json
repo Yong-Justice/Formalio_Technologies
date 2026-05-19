@@ -4,10 +4,21 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@app/*": ["app/*"]
+      "@/*": [
+        "src/*"
+      ],
+      "@app/*": [
+        "app/*"
+      ]
     },
-    "types": ["nativewind/types"]
+    "types": [
+      "nativewind/types"
+    ]
   },
-  "include": ["app", "src", "nativewind-env.d.ts", "app.config.ts"]
+  "include": [
+    "app",
+    "src",
+    "nativewind-env.d.ts",
+    "app.config.ts"
+  ]
 }
