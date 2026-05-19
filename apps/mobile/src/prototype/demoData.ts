@@ -1,5 +1,5 @@
 export type Transaction = {
-  id: number;
+  id: number | string;
   date: string;
   description: string;
   category: string;
@@ -55,7 +55,16 @@ export const expenseBreakdown = [
   { name: 'Autres', value: 8, color: '#ca8a04' },
 ];
 
-export const notifications = [
+export type DemoNotification = {
+  id: number | string;
+  type: 'success' | 'warning' | 'info';
+  title: string;
+  message: string;
+  time: string;
+  read: boolean;
+};
+
+export const notifications: DemoNotification[] = [
   { id: 1, type: 'success' as const, title: 'Sync Mobile Money', message: '45 transactions importées depuis MTN MoMo', time: '2 min', read: false },
   { id: 2, type: 'warning' as const, title: 'Rappel Fiscal', message: 'Déclaration TVA due dans 5 jours', time: '1h', read: false },
   { id: 3, type: 'info' as const, title: 'Score Mosika', message: 'Votre score a augmenté de +15 points !', time: '3h', read: true },

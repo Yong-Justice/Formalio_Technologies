@@ -63,6 +63,10 @@ const config: ExpoConfig = {
     },
     appEnv: process.env.EXPO_PUBLIC_APP_ENV ?? "development",
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+    supabasePublishableKey:
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
     posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN,

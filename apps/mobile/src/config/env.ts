@@ -16,6 +16,13 @@ const nativeBuildVersion = String(
 export const Env = {
   appEnv: (extra.appEnv ?? 'development') as AppEnv,
   apiBaseUrl: String(extra.apiBaseUrl ?? 'http://localhost:3000'),
+  supabaseUrl: String(extra.supabaseUrl ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? ''),
+  supabasePublishableKey: String(
+    extra.supabasePublishableKey ??
+      process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      ''
+  ),
   posthogKey: String(extra.posthogKey ?? ''),
   posthogHost: String(extra.posthogHost ?? 'https://app.posthog.com'),
   sentryDsn: String(extra.sentryDsn ?? ''),

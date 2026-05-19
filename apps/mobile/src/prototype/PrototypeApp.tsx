@@ -134,6 +134,7 @@ import {
   transactions as initialTransactions,
   type Transaction,
 } from './demoData';
+import { formalioBackend } from '@/services/cloud/formalioBackend';
 
 const { width: viewportWidth } = Dimensions.get('window');
 const contentMaxWidth = Math.min(viewportWidth, 430);
@@ -1024,6 +1025,7 @@ function HeaderUtilityActions({
 }
 
 function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void }) {
+  const { showToast } = useToast();
   const [screen, setScreen] = useState<AuthScreen>('splash');
   const [credential, setCredential] = useState('');
   const [phone, setPhone] = useState('');
@@ -1285,7 +1287,24 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
               if (!validatePassword(password)) return setErrors({ password: 'Minimum 8 caractères' });
               setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
               setEmail(normalized.kind === 'email' ? normalized.value : email);
-              simulateLoading('welcome-back', 1500);
+              setLoading(true);
+              formalioBackend
+                .signInWithEmailOrPhone(normalized.value, password)
+                .then(() => {
+                  setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
+                  setEmail(normalized.kind === 'email' ? normalized.value : email);
+                  setScreen('welcome-back');
+                })
+                .catch((error) => {
+                  if (formalioBackend.isConfigured) {
+                    setErrors({ credential: error instanceof Error ? error.message : 'Connexion impossible.' });
+                  } else {
+                    setPhone(normalized.kind === 'phone' ? formatPhone(normalized.value) : phone);
+                    setEmail(normalized.kind === 'email' ? normalized.value : email);
+                    setScreen('welcome-back');
+                  }
+                })
+                .finally(() => setLoading(false));
             }}
           />
           <Divider label="OU" />
@@ -1357,7 +1376,28 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
               if (!validatePassword(password)) nextErrors.password = 'Minimum 8 caractères';
               if (password !== confirmPassword) nextErrors.confirm = 'Les mots de passe ne correspondent pas';
               setErrors(nextErrors);
-              if (Object.keys(nextErrors).length === 0) simulateLoading('phone', 1200);
+              if (Object.keys(nextErrors).length === 0) {
+                setLoading(true);
+                formalioBackend
+                  .signUp({ email, password, fullName: name, phone })
+                  .then((result) => {
+                    if (formalioBackend.isConfigured && !result?.session) {
+                      showToast({
+                        type: 'info',
+                        title: 'Email de verification envoye',
+                        message: 'Confirmez votre email, puis connectez-vous pour activer Formalio.',
+                      });
+                      setScreen('login');
+                      return;
+                    }
+                    setScreen('biometric-setup');
+                  })
+                  .catch((error) => {
+                    if (formalioBackend.isConfigured) setErrors({ email: error instanceof Error ? error.message : 'CrÃ©ation impossible.' });
+                    else setScreen('biometric-setup');
+                  })
+                  .finally(() => setLoading(false));
+              }
             }}
           />
         </View>
@@ -1400,7 +1440,17 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             label={screen === 'forgot-password' ? 'Envoyer le code' : screen === 'forgot-otp' ? 'Vérifier' : 'Réinitialiser'}
             onPress={() => {
               if (screen === 'forgot-password' && !validateCredential(credential)) return setErrors({ credential: 'Entrez un email valide ou un numéro à 9 chiffres.' });
-              navigate(screen === 'forgot-password' ? 'forgot-otp' : screen === 'forgot-otp' ? 'reset-password' : 'login');
+              if (screen === 'forgot-password') {
+                formalioBackend
+                  .resetPassword(credential)
+                  .then(() => navigate('forgot-otp'))
+                  .catch((error) => {
+                    if (formalioBackend.isConfigured) setErrors({ credential: error instanceof Error ? error.message : "Impossible d'envoyer le code." });
+                    else navigate('forgot-otp');
+                  });
+                return;
+              }
+              navigate(screen === 'forgot-otp' ? 'reset-password' : 'login');
             }}
           />
         </View>
@@ -1776,6 +1826,8 @@ function StatusfulPrototype() {
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
   const [notifications, setNotifications] = useState(initialNotifications);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [cloudCompanyId, setCloudCompanyId] = useState<string | null>(null);
+  const [cloudLoading, setCloudLoading] = useState(false);
 
   const showNav = !['auth', 'business-setup'].includes(screen);
   const navigate = useCallback((next: Screen) => {
@@ -1813,6 +1865,42 @@ function StatusfulPrototype() {
   };
   const shellProps = { showNav, activeTab, navigate, goBack, setActiveTab, offlineMode, setOfflineMode, notifications };
 
+  const hydrateCloudData = useCallback(async (showReadyToast = false) => {
+    if (!formalioBackend.isConfigured) return false;
+    setCloudLoading(true);
+    try {
+      const data = await formalioBackend.bootstrap();
+      if (!data) return false;
+      setCloudCompanyId(data.companyId);
+      setProfile(data.profile as BusinessProfile);
+      if (data.transactions.length > 0) setTransactions(data.transactions);
+      setNotifications(data.notifications.length > 0 ? data.notifications : initialNotifications);
+      setLoanRequests(data.loanRequests as LoanRequestRecord[]);
+      setOfflineMode(false);
+      if (showReadyToast) showToast({ type: 'success', title: 'Cloud sync active', message: 'DonnÃ©es Formalio chargÃ©es depuis Supabase.' });
+      return true;
+    } catch (error) {
+      showToast({ type: 'error', title: 'Cloud sync indisponible', message: error instanceof Error ? error.message : 'Impossible de charger Supabase.' });
+      return false;
+    } finally {
+      setCloudLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    let active = true;
+    if (!formalioBackend.isConfigured) return () => {
+      active = false;
+    };
+    (async () => {
+      const loaded = await hydrateCloudData(false);
+      if (active && loaded) setScreen('dashboard');
+    })();
+    return () => {
+      active = false;
+    };
+  }, [hydrateCloudData]);
+
   useEffect(() => {
     if (!businessName && !businessType) return;
     setProfile((current) => ({
@@ -1822,8 +1910,8 @@ function StatusfulPrototype() {
     }));
   }, [businessName, businessType]);
 
-  const handleVoiceTransaction = (parsed: ParsedTransaction) => {
-    const newTransaction: Transaction = {
+  const handleVoiceTransaction = async (parsed: ParsedTransaction) => {
+    const fallbackTransaction: Transaction = {
       id: transactions.length + 1,
       date: new Date().toISOString().split('T')[0],
       description: parsed.description,
@@ -1833,13 +1921,25 @@ function StatusfulPrototype() {
       method: parsed.method,
       status: 'completed',
     };
-    setTransactions([newTransaction, ...transactions]);
+    const cloudTransaction = cloudCompanyId
+      ? await formalioBackend.createTransaction(cloudCompanyId, {
+          description: parsed.description,
+          category: parsed.category,
+          type: parsed.type,
+          amount: parsed.amount,
+          method: parsed.method,
+        }).catch((error) => {
+          showToast({ type: 'error', title: 'Cloud sync transaction', message: error instanceof Error ? error.message : 'Transaction gardÃ©e localement.' });
+          return null;
+        })
+      : null;
+    setTransactions([cloudTransaction ?? fallbackTransaction, ...transactions]);
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 2500);
     showToast({ type: 'success', title: 'Transaction enregistrée !', message: `${parsed.amount.toLocaleString('fr-FR')} FCFA · ${parsed.category}` });
   };
 
-  const handleScannedReceipt = (ticket?: ScannedTicketData) => {
+  const handleScannedReceipt = async (ticket?: ScannedTicketData) => {
     if (ticket) {
       setPendingScan(ticket);
       setScannerOpen(false);
@@ -1857,7 +1957,16 @@ function StatusfulPrototype() {
       method: 'Espèces',
       status: 'completed',
     };
-    setTransactions([scannedTransaction, ...transactions]);
+    const cloudTransaction = cloudCompanyId
+      ? await formalioBackend.createTransaction(cloudCompanyId, {
+          description: scannedTransaction.description,
+          category: scannedTransaction.category,
+          type: scannedTransaction.type,
+          amount: scannedTransaction.amount,
+          method: scannedTransaction.method,
+        }).catch(() => null)
+      : null;
+    setTransactions([cloudTransaction ?? scannedTransaction, ...transactions]);
     setScannerOpen(false);
     showToast({ type: 'success', title: 'Ticket scanné', message: '28,500 FCFA ajouté dans Achats' });
   };
@@ -1880,14 +1989,24 @@ function StatusfulPrototype() {
       notificationCount: 1,
     };
     setLoanRequests((current) => [nextRequest, ...current]);
-  }, []);
+    if (cloudCompanyId) {
+      void formalioBackend.submitLoanRequest(cloudCompanyId, summary).then((cloudRequest) => {
+        if (!cloudRequest) return;
+        setLoanRequests((current) => [cloudRequest as LoanRequestRecord, ...current.filter((request) => request.id !== nextRequest.id)]);
+      }).catch((error) => {
+        showToast({ type: 'error', title: 'Suivi cloud prÃªt', message: error instanceof Error ? error.message : 'Demande gardÃ©e localement.' });
+      });
+    }
+  }, [cloudCompanyId, showToast]);
 
   if (screen === 'auth') {
     return (
       <AuthFlows
-        onComplete={(isNewUser) => {
+        onComplete={async (isNewUser) => {
           showToast({ type: 'success', title: isNewUser ? 'Compte créé !' : 'Connexion réussie', message: isNewUser ? 'Bienvenue sur Formalio' : 'Bon retour !' });
-          if (isNewUser && !businessName) setScreen('business-setup');
+          const loaded = await hydrateCloudData(true);
+          if (loaded) setScreen('dashboard');
+          else if (isNewUser && !businessName) setScreen('business-setup');
           else setScreen('dashboard');
         }}
       />
@@ -1904,7 +2023,7 @@ function StatusfulPrototype() {
         <DashboardScreen shellProps={shellProps} businessName={profile.ownerFullName || businessName} showBalance={showBalance} setShowBalance={setShowBalance} notifications={notifications} offlineMode={offlineMode} setOfflineMode={setOfflineMode} transactions={transactions} navigate={navigate} openAi={() => setAiAssistantOpen(true)} />
       ) : null}
       {screen === 'transactions' ? <TransactionsScreen shellProps={shellProps} transactions={transactions} /> : null}
-      {screen === 'add-transaction' ? <AddTransactionScreen shellProps={shellProps} transactions={transactions} setTransactions={setTransactions} navigate={navigate} openVoice={() => setVoiceRecorderOpen(true)} openScanner={() => setScannerOpen(true)} setShowConfetti={setShowConfetti} scannedDraft={pendingScan} onScanConsumed={handleScanDraftConsumed} /> : null}
+      {screen === 'add-transaction' ? <AddTransactionScreen shellProps={shellProps} cloudCompanyId={cloudCompanyId} transactions={transactions} setTransactions={setTransactions} navigate={navigate} openVoice={() => setVoiceRecorderOpen(true)} openScanner={() => setScannerOpen(true)} setShowConfetti={setShowConfetti} scannedDraft={pendingScan} onScanConsumed={handleScanDraftConsumed} /> : null}
       {screen === 'cashflow' ? <CashflowScreen shellProps={shellProps} /> : null}
       {screen === 'credit-score' ? <CreditScoreScreen shellProps={shellProps} onLoanSubmitted={handleLoanSubmitted} /> : null}
       {screen === 'reports' ? <ReportsScreen shellProps={shellProps} openDownload={openDownload} loanRequests={loanRequests} /> : null}
@@ -1912,7 +2031,20 @@ function StatusfulPrototype() {
       {screen === 'notifications' ? <NotificationsScreen shellProps={shellProps} notifications={notifications} setNotifications={setNotifications} /> : null}
       {screen === 'ai-insights' ? <AiInsightsScreen shellProps={shellProps} transactionCount={transactions.length} /> : null}
       {screen === 'tax' ? <TaxScreen shellProps={shellProps} navigate={navigate} /> : null}
-      {screen === 'profile' ? <ProfileScreen shellProps={shellProps} profile={profile} setProfile={setProfile} navigate={navigate} logout={() => setScreen('auth')} /> : null}
+      {screen === 'profile' ? (
+        <ProfileScreen
+          shellProps={shellProps}
+          profile={profile}
+          setProfile={setProfile}
+          navigate={navigate}
+          logout={() => {
+            void formalioBackend.signOut();
+            setScreen('auth');
+          }}
+          onSaveProfile={(nextProfile) => cloudCompanyId ? formalioBackend.upsertProfile(cloudCompanyId, nextProfile) : Promise.resolve()}
+          onKycStatusChange={(status) => cloudCompanyId ? formalioBackend.updateKycStatus(cloudCompanyId, status) : Promise.resolve()}
+        />
+      ) : null}
       {screen === 'settings' ? <SettingsScreen shellProps={shellProps} /> : null}
       {screen === 'security' ? <SecurityScreen shellProps={shellProps} /> : null}
       {screen === 'subscription' ? <SubscriptionScreen shellProps={shellProps} /> : null}
@@ -1920,11 +2052,19 @@ function StatusfulPrototype() {
       {screen === 'referral' ? <ReferralScreen shellProps={shellProps} /> : null}
       {screen === 'offline' ? <OfflineScreen shellProps={shellProps} /> : null}
       {screen === 'accounting' ? <AccountingScreen shellProps={shellProps} transactions={transactions} navigate={navigate} openDownload={openDownload} /> : null}
-      <AIAssistant isOpen={aiAssistantOpen} onClose={() => setAiAssistantOpen(false)} loanRequests={loanRequests} transactions={transactions} />
+      <AIAssistant isOpen={aiAssistantOpen} onClose={() => setAiAssistantOpen(false)} loanRequests={loanRequests} transactions={transactions} companyId={cloudCompanyId} />
       <VoiceRecorder isOpen={voiceRecorderOpen} onClose={() => setVoiceRecorderOpen(false)} onComplete={handleVoiceTransaction} />
       <DownloadModal isOpen={downloadModalOpen} onClose={() => setDownloadModalOpen(false)} reportTitle={downloadReportInfo.title} reportPeriod={downloadReportInfo.period} />
       <ScannerModal isOpen={scannerOpen} onClose={() => setScannerOpen(false)} onSave={handleScannedReceipt} />
       <ConfettiBurst trigger={showConfetti} />
+      {cloudLoading ? (
+        <View style={{ position: 'absolute', left: 16, right: 16, top: 82, zIndex: 120, borderRadius: 14, backgroundColor: c.formalio900, padding: 12, shadowColor: c.surface950, shadowOpacity: 0.16, shadowRadius: 12, elevation: 8 }}>
+          <Row style={{ gap: 8 }}>
+            <ActivityIndicator color={c.formalio300} size="small" />
+            <Txt weight="bold" style={{ color: c.white, fontSize: 12 }}>Synchronisation cloud Formalio...</Txt>
+          </Row>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -2123,7 +2263,10 @@ function normalizeSearchText(value: string) {
 }
 
 function getTransactionHour(transaction: Transaction) {
-  return (transaction.id * 3 + 7) % 24;
+  const idSeed = typeof transaction.id === 'number'
+    ? transaction.id
+    : transaction.id.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return (idSeed * 3 + 7) % 24;
 }
 
 function getTransactionTime(transaction: Transaction) {
@@ -2304,6 +2447,7 @@ function TransactionsScreen({ shellProps, transactions }: { shellProps: ShellPro
 
 function AddTransactionScreen({
   shellProps,
+  cloudCompanyId,
   transactions,
   setTransactions,
   navigate,
@@ -2314,6 +2458,7 @@ function AddTransactionScreen({
   onScanConsumed,
 }: {
   shellProps: ShellProps;
+  cloudCompanyId: string | null;
   transactions: Transaction[];
   setTransactions: (v: Transaction[]) => void;
   navigate: (s: Screen) => void;
@@ -2354,9 +2499,9 @@ function AddTransactionScreen({
     setScanPreview(scannedDraft);
     onScanConsumed();
   }, [onScanConsumed, scannedDraft]);
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!amount || !desc) return showToast({ type: 'error', title: 'Champs manquants', message: 'Montant et description requis' });
-    const newTransaction: Transaction = {
+    const fallbackTransaction: Transaction = {
       id: transactions.length + 1,
       date: new Date().toISOString().split('T')[0],
       description: desc,
@@ -2366,7 +2511,19 @@ function AddTransactionScreen({
       method,
       status: 'completed',
     };
-    setTransactions([newTransaction, ...transactions]);
+    const cloudTransaction = cloudCompanyId
+      ? await formalioBackend.createTransaction(cloudCompanyId, {
+          description: desc,
+          category: category || 'Autres',
+          type,
+          amount: Number(amount),
+          method,
+        }).catch((error) => {
+          showToast({ type: 'error', title: 'Cloud sync transaction', message: error instanceof Error ? error.message : 'Transaction gardÃ©e localement.' });
+          return null;
+        })
+      : null;
+    setTransactions([cloudTransaction ?? fallbackTransaction, ...transactions]);
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 2500);
     showToast({ type: 'success', title: 'Transaction enregistrée !', message: `${isExpense ? '-' : '+'}${Number(amount).toLocaleString('fr-FR')} FCFA` });
@@ -3444,12 +3601,16 @@ function ProfileScreen({
   setProfile,
   navigate,
   logout,
+  onSaveProfile,
+  onKycStatusChange,
 }: {
   shellProps: ShellProps;
   profile: BusinessProfile;
   setProfile: React.Dispatch<React.SetStateAction<BusinessProfile>>;
   navigate: (s: Screen) => void;
   logout: () => void;
+  onSaveProfile?: (profile: BusinessProfile) => Promise<void>;
+  onKycStatusChange?: (status: KycStatus) => Promise<void>;
 }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(false);
@@ -3491,12 +3652,17 @@ function ProfileScreen({
       return;
     }
     setSaving(true);
-    setTimeout(() => {
+    void (async () => {
+      try {
+        await onSaveProfile?.(form);
+      } catch (error) {
+        showToast({ type: 'error', title: 'Sauvegarde cloud impossible', message: error instanceof Error ? error.message : 'Reessayez plus tard.' });
+      }
       setProfile(form);
       setSaving(false);
       setEditing(false);
       showToast({ type: 'success', title: 'Profil mis à jour', message: `Complétion: ${calculateProfileCompletion(form)}%` });
-    }, 900);
+    })();
   };
 
   const cancelProfileEdit = () => {
@@ -3605,7 +3771,13 @@ function ProfileScreen({
           )}
         </Card>
 
-        <KycVerificationPanel profile={profile} onStatusChange={(kycStatus) => setProfile((current) => ({ ...current, kycStatus }))} />
+        <KycVerificationPanel
+          profile={profile}
+          onStatusChange={(kycStatus) => {
+            setProfile((current) => ({ ...current, kycStatus }));
+            void onKycStatusChange?.(kycStatus);
+          }}
+        />
 
         <View style={styles.profileMenu}>
           {[
@@ -4482,7 +4654,7 @@ function AssistantVoiceNotePanel({
   );
 }
 
-function AIAssistant({ isOpen, onClose, transactions, loanRequests }: { isOpen: boolean; onClose: () => void; transactions: Transaction[]; loanRequests: LoanRequestRecord[] }) {
+function AIAssistant({ isOpen, onClose, transactions, loanRequests, companyId }: { isOpen: boolean; onClose: () => void; transactions: Transaction[]; loanRequests: LoanRequestRecord[]; companyId: string | null }) {
   type Message = { id: number; type: 'user' | 'ai'; content: string; timestamp: Date; suggestions?: string[]; action?: 'categorize' | 'insight' | 'alert' | 'report' };
   const totalIncome = transactions.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
   const totalExpense = transactions.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -4497,6 +4669,7 @@ function AIAssistant({ isOpen, onClose, transactions, loanRequests }: { isOpen: 
   const [voiceMode, setVoiceMode] = useState<AssistantVoiceMode>('idle');
   const [voiceDuration, setVoiceDuration] = useState(0);
   const [voiceError, setVoiceError] = useState('');
+  const [conversationId, setConversationId] = useState<string | undefined>();
   const voiceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const playbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -4542,6 +4715,20 @@ function AIAssistant({ isOpen, onClose, transactions, loanRequests }: { isOpen: 
     setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
     setIsTyping(true);
+    if (companyId && formalioBackend.isConfigured) {
+      void formalioBackend.chat(companyId, value, conversationId)
+        .then((response) => {
+          if (!response) throw new Error('No AI response.');
+          setConversationId(response.conversationId);
+          setMessages((prev) => [...prev, { id: Date.now() + 1, type: 'ai', content: response.reply, timestamp: new Date(), suggestions: response.quickActions }]);
+        })
+        .catch(() => {
+          const response = getAIResponse(value);
+          setMessages((prev) => [...prev, { id: Date.now() + 1, type: 'ai', timestamp: new Date(), ...response }]);
+        })
+        .finally(() => setIsTyping(false));
+      return;
+    }
     setTimeout(() => {
       const response = getAIResponse(value);
       setMessages((prev) => [...prev, { id: Date.now() + 1, type: 'ai', timestamp: new Date(), ...response }]);
