@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { MiniBarChart } from '@/components/charts/MiniBarChart';
 import { useFinanceStore } from '@/features/finance/state/finance.store';
+import { analytics } from '@/services/analytics/analytics.service';
 
 const demoTransactions = [
   { id: '1', type: 'income', amount: 125000, description: 'Vente marchandise', category: 'Ventes' },
@@ -37,7 +38,14 @@ export default function HomeScreen() {
         <Card title="Performance 7 jours"><MiniBarChart values={[12, 8, 20, 6, 14, 9, 5]} /></Card>
         <View className="flex-row gap-2">
           {[['Income', 'add-circle'], ['Expense', 'remove-circle'], ['Voice', 'mic'], ['Scan', 'scan']].map(([label, icon]) => (
-            <Pressable key={label} className="flex-1 items-center rounded-2xl bg-white p-3 border border-surface-200">
+            <Pressable
+              key={label}
+              onPress={() => {
+                if (label === 'Voice') analytics.featureUsed('voice_input', { source: 'home_quick_action' });
+                if (label === 'Income' || label === 'Expense') analytics.track('transaction_initiated', { source: 'home_quick_action', type: label.toLowerCase() });
+              }}
+              className="flex-1 items-center rounded-2xl bg-white p-3 border border-surface-200"
+            >
               <Ionicons name={icon as any} size={22} color="#001F3F" />
               <Text className="mt-1 text-xs font-bold text-surface-700">{label}</Text>
             </Pressable>

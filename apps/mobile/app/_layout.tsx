@@ -1,29 +1,48 @@
+import '@/services/observability/sentry';
 import '../src/styles/global.css';
 import 'react-native-reanimated';
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { AppProviders } from '@/app/providers/AppProviders';
+import { AppProviders } from '@/providers/AppProviders';
+import { useAuthStore } from '@/features/auth/state/auth.store';
+import { Sentry } from '@/services/observability/sentry';
 
 void SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayout() {
+  const isHydrated = useAuthStore((s) => s.isHydrated);
+
   useEffect(() => {
-    const timer = setTimeout(() => void SplashScreen.hideAsync(), 700);
-    return () => clearTimeout(timer);
-  }, []);
+    if (isHydrated) void SplashScreen.hideAsync();
+  }, [isHydrated]);
 
   return (
-    <AppProviders>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(onboarding)" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="modals/loan-request" options={{ presentation: 'modal' }} />
-      </Stack>
-    </AppProviders>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppProviders>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            animationDuration: 280,
+            gestureEnabled: true,
+            contentStyle: { backgroundColor: '#f8fafc' },
+          }}
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(onboarding)" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="modals/loan-request" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="modals/transaction-detail" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="modals/security-alert" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        </Stack>
+      </AppProviders>
+    </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);

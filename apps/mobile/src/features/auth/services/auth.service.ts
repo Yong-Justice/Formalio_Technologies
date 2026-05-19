@@ -1,6 +1,7 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { request } from '@/services/api/client';
 import { endpoints } from '@/services/api/endpoints';
+import { analytics } from '@/services/analytics/analytics.service';
 import { User } from '@/types/domain';
 
 export interface AuthResponse {
@@ -38,6 +39,7 @@ export const authService = {
       cancelLabel: 'Annuler',
       disableDeviceFallback: false
     });
+    analytics.track(result.success ? 'biometric_auth_succeeded' : 'biometric_auth_failed', { source: 'auth_service' });
     return result.success;
   }
 };

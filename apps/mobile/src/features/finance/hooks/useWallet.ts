@@ -23,7 +23,7 @@ import { useQuery } from "@tanstack/react-query";
     const cached = useFinanceStore(s => s.walletBalance);
     const setWalletBalance = useFinanceStore(s => s.setWalletBalance);
 
-    const { data, dataUpdatedAt, isLoading, isFetching, isError, error } = useQuery<WalletBalance>({
+    const { data, isLoading, isFetching, isError, error } = useQuery<WalletBalance>({
       queryKey: queryKeys.walletBalance(businessId),
       queryFn: async () => {
         const fresh = await financeService.getWalletBalance(businessId);
