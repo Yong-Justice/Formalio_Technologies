@@ -1,19 +1,21 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
-  import { Env } from '@/config/env';
-  import { secureKeys, secureStorage } from '@/services/storage/secureStorage';
-  import { pinnedApiClientWithAuth } from '@/services/security/pinning';
-  import type { ApiEnvelope } from '@/types/api';
+import axios, { AxiosError, AxiosRequestConfig } from "axios";
+  import { Env } from "@/config/env";
+  import { secureStorage, secureKeys } from "@/services/storage/secureStorage";
+  import { pinnedApiClientWithAuth } from "@/services/security/pinning";
+  import { signRequest } from "@/services/api/signing";
+  import { assertDeviceIntegrity } from "@/services/security/jailbreak";
+  import type { ApiEnvelope } from "@/types/api";
 
   // ---------------------------------------------------------------------------
-  // General-purpose axios client (non-financial routes)
+  // General-purpose axios client — non-financial routes (auth, AI, settings…)
   // ---------------------------------------------------------------------------
   export const apiClient = axios.create({
     baseURL: Env.apiBaseUrl,
     timeout: 20000,
     headers: {
-      'Content-Type': 'application/json',
-      'X-Client': 'formalio-mobile'
-    }
+      "Content-Type": "application/json",
+      "X-Client": "formalio-mobile",
+    },
   });
 
   apiClient.interceptors.request.use(async (config) => {
@@ -33,16 +35,19 @@ import axios, { AxiosError, AxiosRequestConfig } from 'axios';
         axiosError.response?.data?.success === false
           ? axiosError.response.data.error.message
           : axiosError.message;
-      throw new Error(message || 'Une erreur est survenue.');
+      throw new Error(message || "Une erreur est survenue.");
     }
   }
 
   // ---------------------------------------------------------------------------
-  // SSL-pinned client for all financial API calls
-  // Replaces axios for any route that touches money, credit, or reports.
-  // Uses react-native-ssl-pinning to prevent MITM on African telco networks.
+  // SSL-pinned + signed client — all financial routes
+  //
+  // Every call runs three gates in order:
+  //   1. Device integrity  — blocks on rooted / jailbroken device
+  //   2. Authentication    — reads access token from SecureStore
+  //   3. Request signing   — attaches HMAC-SHA256 signature to prevent replays
   // ---------------------------------------------------------------------------
-  type PinnedMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  type PinnedMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
   type FinancialRequestConfig = {
     method: PinnedMethod;
@@ -51,28 +56,36 @@ import axios, { AxiosError, AxiosRequestConfig } from 'axios';
   };
 
   export async function financialRequest<T>(config: FinancialRequestConfig): Promise<T> {
+    // Gate 1 — device integrity (throws DeviceCompromisedError if rooted/jailbroken)
+    await assertDeviceIntegrity();
+
+    // Gate 2 — authentication
     const accessToken = await secureStorage.get(secureKeys.accessToken);
-    if (!accessToken) throw new Error('Not authenticated.');
+    if (!accessToken) throw new Error("Not authenticated.");
+
+    // Gate 3 — HMAC-SHA256 request signing (replay-attack prevention)
+    const payload = config.data ?? {};
+    const signatureHeaders = signRequest(payload) as Record<string, string>;
 
     const client = await pinnedApiClientWithAuth(accessToken);
 
     let response: Awaited<ReturnType<typeof client.get>>;
 
     switch (config.method) {
-      case 'POST':
-        response = await client.post(config.url, config.data);
+      case "POST":
+        response = await client.post(config.url, payload, signatureHeaders);
         break;
-      case 'PUT':
-        response = await client.put(config.url, config.data);
+      case "PUT":
+        response = await client.put(config.url, payload, signatureHeaders);
         break;
-      case 'PATCH':
-        response = await client.patch(config.url, config.data);
+      case "PATCH":
+        response = await client.patch(config.url, payload, signatureHeaders);
         break;
-      case 'DELETE':
-        response = await client.delete(config.url);
+      case "DELETE":
+        response = await client.delete(config.url, signatureHeaders);
         break;
       default:
-        response = await client.get(config.url);
+        response = await client.get(config.url, signatureHeaders);
     }
 
     const envelope = response.json as ApiEnvelope<T>;
