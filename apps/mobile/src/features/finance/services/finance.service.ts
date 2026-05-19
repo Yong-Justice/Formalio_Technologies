@@ -1,54 +1,38 @@
-import { financialRequest } from '@/services/api/client';
-  import { endpoints } from '@/services/api/endpoints';
-  import { enqueueRequest } from '@/services/offline/queue';
-  import { useNetworkStore } from '@/services/offline/network';
-  import { Transaction, Report, CreditScore } from '@/types/domain';
+import { financialRequest, request } from "@/services/api/client";
+  import { endpoints } from "@/services/api/endpoints";
+  import { enqueueRequest, QueuePriority } from "@/services/offline/queue";
+  import { useNetworkStore } from "@/services/offline/network";
+  import { Transaction, Report, CreditScore, WalletBalance, ExchangeRate } from "@/types/domain";
 
-  /**
-   * All methods use the SSL-pinned client via financialRequest.
-   * This prevents MITM attacks on African telco networks for all
-   * routes that touch money, credit scores, or financial reports.
-   */
   export const financeService = {
-    listTransactions(businessId: string) {
-      return financialRequest<Transaction[]>({
-        method: 'GET',
-        url: endpoints.businesses.transactions(businessId),
-      });
-    },
+    /** 30s TTL */
+    getWalletBalance: (businessId: string) =>
+      financialRequest<WalletBalance>({ method: "GET", url: endpoints.wallet.balance(businessId) }),
+
+    /** 5 min TTL */
+    listTransactions: (businessId: string) =>
+      financialRequest<Transaction[]>({ method: "GET", url: endpoints.businesses.transactions(businessId) }),
 
     async createTransaction(transaction: Transaction) {
       const isOnline = useNetworkStore.getState().isOnline;
       const url = endpoints.businesses.transactions(transaction.businessId);
-
       if (!isOnline) {
-        enqueueRequest({ id: transaction.id, method: 'POST', url, body: transaction });
-        return { ...transaction, syncStatus: 'pending' as const };
+        enqueueRequest({ id: transaction.id, method: "POST", url, body: transaction, optimisticData: transaction, priority: QueuePriority.CRITICAL, conflictResolution: "server-authoritative" });
+        return { ...transaction, syncStatus: "pending" as const };
       }
-
-      return financialRequest<Transaction>({
-        method: 'POST',
-        url,
-        data: transaction as unknown as Record<string, unknown>,
-      });
+      return financialRequest<Transaction>({ method: "POST", url, data: transaction as unknown as Record<string,unknown> });
     },
 
-    generateReport(
-      businessId: string,
-      payload: { type: string; periodStart: string; periodEnd: string }
-    ) {
-      return financialRequest<Report>({
-        method: 'POST',
-        url: endpoints.businesses.generateReport(businessId),
-        data: payload,
-      });
-    },
+    /** 24h TTL */
+    getCreditScore: (businessId: string) =>
+      financialRequest<CreditScore>({ method: "GET", url: endpoints.businesses.creditScore(businessId) }),
 
-    getCreditScore(businessId: string) {
-      return financialRequest<CreditScore>({
-        method: 'GET',
-        url: endpoints.businesses.creditScore(businessId),
-      });
-    },
+    /** Indefinite TTL — pinned until regenerated */
+    generateReport: (businessId: string, payload: { type: string; periodStart: string; periodEnd: string }) =>
+      financialRequest<Report>({ method: "POST", url: endpoints.businesses.generateReport(businessId), data: payload }),
+
+    /** 1h TTL — not pinned, no auth required */
+    getExchangeRates: () =>
+      request<ExchangeRate[]>({ method: "GET", url: endpoints.exchange.rates }),
   };
   

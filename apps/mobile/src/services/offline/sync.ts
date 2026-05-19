@@ -1,14 +1,48 @@
-import { useEffect } from 'react';
-import { flushOfflineQueue } from './queue';
-import { useNetworkStore } from './network';
+import { useEffect, useRef } from "react";
+  import { AppState, type AppStateStatus } from "react-native";
+  import { flushOfflineQueue, getOfflineQueue } from "./queue";
+  import { useNetworkStore } from "./network";
 
-export function useOfflineSync() {
-  const isOnline = useNetworkStore((state) => state.isOnline);
-  const initNetworkListener = useNetworkStore((state) => state.initNetworkListener);
+  const SYNC_INTERVAL_MS = 30_000;
 
-  useEffect(() => initNetworkListener(), [initNetworkListener]);
+  /**
+   * Mount once at app root. Handles:
+   * 1. NetInfo listener (keeps isOnline accurate)
+   * 2. Immediate flush when device comes back online
+   * 3. 30s polling while foregrounded — stops in background to save battery
+   */
+  export function useOfflineSync() {
+    const isOnline = useNetworkStore(s => s.isOnline);
+    const initNetworkListener = useNetworkStore(s => s.initNetworkListener);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    if (isOnline) void flushOfflineQueue();
-  }, [isOnline]);
-}
+    useEffect(() => initNetworkListener(), [initNetworkListener]);
+
+    useEffect(() => {
+      if (isOnline && getOfflineQueue().length > 0) void flushOfflineQueue();
+    }, [isOnline]);
+
+    useEffect(() => {
+      function start() {
+        if (intervalRef.current) return;
+        intervalRef.current = setInterval(() => {
+          if (isOnline && getOfflineQueue().length > 0) void flushOfflineQueue();
+        }, SYNC_INTERVAL_MS);
+      }
+      function stop() {
+        if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+      }
+      const sub = AppState.addEventListener("change", (s: AppStateStatus) => s === "active" ? start() : stop());
+      if (isOnline) start();
+      return () => { stop(); sub.remove(); };
+    }, [isOnline]);
+  }
+
+  /** Conflict resolution — called after successful sync */
+  export function resolveConflict<T extends object>(
+    strategy: "last-write-wins" | "server-authoritative",
+    local: T, server: T
+  ): T {
+    return strategy === "server-authoritative" ? server : { ...server, ...local };
+  }
+  

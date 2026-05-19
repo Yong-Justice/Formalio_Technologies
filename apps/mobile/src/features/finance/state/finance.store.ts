@@ -1,41 +1,49 @@
-import { create } from 'zustand';
-import { Business, Transaction } from '@/types/domain';
-import { getJson, setJson, storageKeys } from '@/services/storage/mmkv';
+import { create } from "zustand";
+  import { Business, Transaction, WalletBalance } from "@/types/domain";
+  import { queryStorage, getJson, setJson, storageKeys } from "@/services/storage/mmkv";
 
-interface FinanceState {
-  businesses: Business[];
-  selectedBusinessId?: string;
-  transactions: Transaction[];
-  hydrate: () => void;
-  selectBusiness: (businessId: string) => void;
-  upsertTransaction: (transaction: Transaction) => void;
-  softDeleteTransaction: (transactionId: string) => void;
-}
+  const Q = storageKeys.query;
 
-export const useFinanceStore = create<FinanceState>((set, get) => ({
-  businesses: [],
-  selectedBusinessId: undefined,
-  transactions: [],
-  hydrate() {
-    set({
-      businesses: getJson<Business[]>(storageKeys.businesses, []),
-      transactions: getJson<Transaction[]>(storageKeys.transactions, []),
-      selectedBusinessId: getJson<string | undefined>(storageKeys.selectedBusinessId, undefined)
-    });
-  },
-  selectBusiness(businessId) {
-    setJson(storageKeys.selectedBusinessId, businessId);
-    set({ selectedBusinessId: businessId });
-  },
-  upsertTransaction(transaction) {
-    const existing = get().transactions;
-    const next = [transaction, ...existing.filter((t) => t.id !== transaction.id)];
-    setJson(storageKeys.transactions, next);
-    set({ transactions: next });
-  },
-  softDeleteTransaction(transactionId) {
-    const next = get().transactions.map((t) => t.id === transactionId ? { ...t, deletedAt: new Date().toISOString(), syncStatus: 'pending' as const } : t);
-    setJson(storageKeys.transactions, next);
-    set({ transactions: next });
+  interface FinanceState {
+    businesses: Business[]; selectedBusinessId?: string;
+    transactions: Transaction[]; walletBalance?: WalletBalance;
+    hydrate: () => void;
+    selectBusiness: (id: string) => void;
+    setWalletBalance: (balance: WalletBalance) => void;
+    upsertTransaction: (t: Transaction) => void;
+    rollbackTransaction: (id: string) => void;
+    softDeleteTransaction: (id: string) => void;
   }
-}));
+
+  export const useFinanceStore = create<FinanceState>((set, get) => ({
+    businesses: [], selectedBusinessId: undefined, transactions: [], walletBalance: undefined,
+
+    hydrate() {
+      set({
+        businesses:         getJson<Business[]>(queryStorage, Q.businesses, []),
+        transactions:       getJson<Transaction[]>(queryStorage, Q.transactions, []),
+        selectedBusinessId: getJson<string|undefined>(queryStorage, Q.selectedBusinessId, undefined),
+        walletBalance:      getJson<WalletBalance|undefined>(queryStorage, Q.walletBalance, undefined),
+      });
+    },
+    selectBusiness(id) { setJson(queryStorage, Q.selectedBusinessId, id); set({ selectedBusinessId: id }); },
+    setWalletBalance(balance) {
+      setJson(queryStorage, Q.walletBalance, balance);
+      setJson(queryStorage, Q.walletLastUpdated, new Date().toISOString());
+      set({ walletBalance: balance });
+    },
+    upsertTransaction(t) {
+      const next = [t, ...get().transactions.filter(x => x.id !== t.id)];
+      setJson(queryStorage, Q.transactions, next); set({ transactions: next });
+    },
+    rollbackTransaction(id) {
+      const next = get().transactions.map(t => t.id === id ? { ...t, syncStatus: "failed" as const } : t);
+      setJson(queryStorage, Q.transactions, next); set({ transactions: next });
+    },
+    softDeleteTransaction(id) {
+      const next = get().transactions.map(t =>
+        t.id === id ? { ...t, deletedAt: new Date().toISOString(), syncStatus: "pending" as const } : t);
+      setJson(queryStorage, Q.transactions, next); set({ transactions: next });
+    },
+  }));
+  
