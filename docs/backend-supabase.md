@@ -53,7 +53,8 @@ Production deployment is currently linked to Supabase project `skxyktfeeozjzgsot
 1. Create a Supabase project.
 2. In the Supabase dashboard, configure Auth providers:
    - Email/password enabled.
-   - Email confirmations enabled.
+   - Email confirmations disabled for MVP first-login onboarding.
+   - App-level progressive email verification tracked on `public.profiles`.
    - Supabase built-in auth email sender enabled for free MVP/testing mode.
    - Custom SMTP and SMS OTP disabled until the paid provider upgrade points in [auth-verification.md](./auth-verification.md) are ready.
    - Google OAuth can be enabled after Google client ID/secret are available.
@@ -97,6 +98,6 @@ npx expo start
 - RLS is enabled on all 28 public application tables.
 - Storage buckets are created: `profile-media`, `business-documents`, `kyc-documents`, `report-exports`.
 - Edge Functions are deployed and active: `analytics`, `reports-generate`, `ai-assistant`, `ocr-ticket`, `notifications`.
-- Auth is configured with email/password, email confirmation, 8-character minimum passwords, required lower/upper/digit characters, refresh token rotation, disabled anonymous sign-ins, and TOTP MFA support.
+- Auth is configured with email/password, progressive app-level email verification, 8-character minimum passwords, required lower/upper/digit characters, refresh token rotation, disabled anonymous sign-ins, and TOTP MFA support.
 - MVP auth currently uses Supabase built-in auth emails with custom SMTP and SMS disabled. This is suitable for controlled testing and preview builds, not high-volume public production delivery.
 - Supabase advisor checks report no warn-level issues after the hardening migrations.

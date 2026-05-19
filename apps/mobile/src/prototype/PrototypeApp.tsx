@@ -285,9 +285,14 @@ type BusinessProfile = {
   profileImageUri?: string;
   bannerImageUri?: string;
   kycStatus: KycStatus;
+  emailVerificationStatus: EmailVerificationStatus;
+  emailVerifiedAt?: string;
+  emailVerificationSentAt?: string;
+  emailVerificationNextAttemptAt?: string;
 };
 
 type KycStatus = 'pending' | 'under-review' | 'approved' | 'rejected';
+type EmailVerificationStatus = 'unverified' | 'sent' | 'queued' | 'deferred' | 'verified';
 
 type KycDraft = {
   fullName: string;
@@ -313,6 +318,7 @@ const defaultBusinessProfile: BusinessProfile = {
   category: 'Commerce',
   address: 'Akwa, Douala, Cameroun',
   kycStatus: 'pending',
+  emailVerificationStatus: 'unverified',
 };
 
 const mascotImages: Record<MascotState, number> = {
@@ -1388,18 +1394,11 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
                 formalioBackend
                   .signUp({ email, password, fullName: name, phone })
                   .then((result) => {
-                    if (formalioBackend.isConfigured && !result?.session) {
-                      const targetEmail = email.trim().toLowerCase();
-                      setOtpTarget(targetEmail);
-                      resetOtp(8);
-                      startResendCooldown();
-                      showToast({
-                        type: 'info',
-                        title: 'Email de verification envoye',
-                        message: 'Entrez le code recu par email pour activer Formalio.',
-                      });
-                      setScreen('email-otp');
-                      return;
+                    const verification = result && 'verification' in result ? result.verification : null;
+                    if (verification?.status === 'queued' || verification?.status === 'deferred') {
+                      showToast({ type: 'info', title: 'Compte cree', message: verification.message });
+                    } else if (verification?.status === 'sent') {
+                      showToast({ type: 'success', title: 'Compte cree', message: 'Vous pouvez entrer maintenant. La verification email reste disponible dans le profil.' });
                     }
                     setScreen('biometric-setup');
                   })
@@ -2294,8 +2293,8 @@ function StatusfulPrototype() {
           onKycStatusChange={(status) => cloudCompanyId ? formalioBackend.updateKycStatus(cloudCompanyId, status) : Promise.resolve()}
         />
       ) : null}
-      {screen === 'settings' ? <SettingsScreen shellProps={shellProps} /> : null}
-      {screen === 'security' ? <SecurityScreen shellProps={shellProps} /> : null}
+      {screen === 'settings' ? <SettingsScreen shellProps={shellProps} profile={profile} setProfile={setProfile} /> : null}
+      {screen === 'security' ? <SecurityScreen shellProps={shellProps} profile={profile} setProfile={setProfile} /> : null}
       {screen === 'subscription' ? <SubscriptionScreen shellProps={shellProps} /> : null}
       {screen === 'help' ? <HelpScreen shellProps={shellProps} openAi={() => setAiAssistantOpen(true)} /> : null}
       {screen === 'referral' ? <ReferralScreen shellProps={shellProps} /> : null}
@@ -3876,6 +3875,22 @@ function ProfileScreen({
   }, [editing, profile]);
 
   const updateForm = <K extends keyof BusinessProfile>(key: K, value: BusinessProfile[K]) => {
+    if (key === 'email') {
+      const nextEmail = String(value).trim().toLowerCase();
+      setForm((current) => ({
+        ...current,
+        email: nextEmail,
+        ...(nextEmail !== profile.email.trim().toLowerCase()
+          ? {
+              emailVerificationStatus: 'unverified' as EmailVerificationStatus,
+              emailVerifiedAt: undefined,
+              emailVerificationSentAt: undefined,
+              emailVerificationNextAttemptAt: undefined,
+            }
+          : {}),
+      }));
+      return;
+    }
     setForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -3962,6 +3977,8 @@ function ProfileScreen({
           <ValueBar value={completion} color={completion >= 80 ? c.formalio500 : c.gold500} />
           <Txt style={{ color: c.surface500, fontSize: 10, marginTop: 7 }}>Complete profile and KYC details to unlock stronger financing offers.</Txt>
         </Card>
+
+        <EmailVerificationCard profile={profile} setProfile={setProfile} />
 
         <Card style={styles.profileEditorCard}>
           <Row style={{ justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
@@ -4098,6 +4115,128 @@ function ProfileInfoRow({ icon, label, value }: { icon: LucideIcon; label: strin
       <Txt style={{ color: c.surface500, fontSize: 11, width: 76 }}>{label}</Txt>
       <Txt weight="semibold" numberOfLines={1} style={{ color: c.surface800, fontSize: 12, flex: 1 }}>{value}</Txt>
     </Row>
+  );
+}
+
+function getEmailVerificationMeta(status: EmailVerificationStatus) {
+  const map = {
+    verified: { label: 'Verified', title: 'Email verified', copy: 'Your recovery and security emails are active.', color: c.formalio700, bg: c.formalio50 },
+    sent: { label: 'Code sent', title: 'Verification email sent', copy: 'Enter the code if you received one, or open the link in your inbox.', color: c.info700, bg: c.info50 },
+    queued: { label: 'Queued', title: 'Verification queued', copy: 'The free email sender is busy. Formalio will let you retry soon.', color: c.gold700, bg: c.gold50 },
+    deferred: { label: 'Retry later', title: 'Verification deferred', copy: 'You can continue using Formalio. Try sending the email again shortly.', color: c.gold700, bg: c.gold50 },
+    unverified: { label: 'Not verified', title: 'Verify your email', copy: 'You can use Formalio now. Verification improves recovery and account trust.', color: c.surface600, bg: c.surface50 },
+  } satisfies Record<EmailVerificationStatus, { label: string; title: string; copy: string; color: string; bg: string }>;
+  return map[status];
+}
+
+function EmailVerificationCard({ profile, setProfile, compact }: { profile: BusinessProfile; setProfile: React.Dispatch<React.SetStateAction<BusinessProfile>>; compact?: boolean }) {
+  const { showToast } = useToast();
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [token, setToken] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const verified = profile.emailVerificationStatus === 'verified' || Boolean(profile.emailVerifiedAt);
+  const meta = getEmailVerificationMeta(verified ? 'verified' : profile.emailVerificationStatus);
+  const nextAttemptMs = profile.emailVerificationNextAttemptAt ? new Date(profile.emailVerificationNextAttemptAt).getTime() : 0;
+  const secondsRemaining = Math.max(0, Math.ceil((nextAttemptMs - now) / 1000));
+  const canSend = !verified && !sending && secondsRemaining === 0;
+
+  useEffect(() => {
+    if (!nextAttemptMs || secondsRemaining === 0) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [nextAttemptMs, secondsRemaining]);
+
+  const applyVerificationResult = (result: Awaited<ReturnType<typeof formalioBackend.requestEmailVerification>>) => {
+    if (!result || result.status === 'skipped') return;
+    const nextStatus: EmailVerificationStatus = result.status === 'verified' ? 'verified' : result.status;
+    setProfile((current) => ({
+      ...current,
+      emailVerificationStatus: nextStatus,
+      emailVerificationSentAt: result.sentAt ?? current.emailVerificationSentAt,
+      emailVerificationNextAttemptAt: result.nextAttemptAt ?? current.emailVerificationNextAttemptAt,
+    }));
+  };
+
+  const sendVerification = () => {
+    if (!canSend) return;
+    setSending(true);
+    void formalioBackend
+      .requestEmailVerification(profile.email)
+      .then((result) => {
+        applyVerificationResult(result);
+        showToast({
+          type: result.status === 'sent' ? 'success' : 'info',
+          title: result.status === 'sent' ? 'Verification sent' : 'Verification saved',
+          message: result.message,
+        });
+      })
+      .catch((error) => {
+        showToast({ type: 'error', title: 'Verification email', message: error instanceof Error ? error.message : 'Try again later.' });
+      })
+      .finally(() => setSending(false));
+  };
+
+  const verifyToken = () => {
+    const value = token.trim();
+    if (value.length < 6) {
+      showToast({ type: 'error', title: 'Code incomplete', message: 'Enter the code from your email.' });
+      return;
+    }
+    setVerifying(true);
+    void formalioBackend
+      .verifyProgressiveEmailOtp(profile.email, value)
+      .then(() => {
+        const verifiedAt = new Date().toISOString();
+        setProfile((current) => ({
+          ...current,
+          emailVerificationStatus: 'verified',
+          emailVerifiedAt: verifiedAt,
+          emailVerificationNextAttemptAt: undefined,
+        }));
+        setToken('');
+        showToast({ type: 'success', title: 'Email verified', message: 'Your account trust status has been updated.' });
+      })
+      .catch((error) => {
+        showToast({ type: 'error', title: 'Code invalid', message: error instanceof Error ? error.message : 'Check the code and try again.' });
+      })
+      .finally(() => setVerifying(false));
+  };
+
+  return (
+    <Card style={[styles.profileCompletionCard, { backgroundColor: meta.bg, borderColor: meta.bg }, compact && { marginBottom: 16 }]}>
+      <Row style={{ justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+        <Row style={{ flex: 1, gap: 10, alignItems: 'flex-start' }}>
+          <View style={[styles.metricIcon, { backgroundColor: c.white }]}><Icon icon={verified ? CheckCircle2 : Mail} size={16} color={meta.color} /></View>
+          <View style={{ flex: 1 }}>
+            <Txt weight="black" style={{ color: c.surface900, fontSize: 14 }}>{meta.title}</Txt>
+            <Txt style={{ color: c.surface600, fontSize: 11, lineHeight: 16, marginTop: 3 }}>{meta.copy}</Txt>
+            <Txt numberOfLines={1} style={{ color: c.surface500, fontSize: 10, marginTop: 5 }}>{profile.email}</Txt>
+          </View>
+        </Row>
+        <View style={[styles.kycStatusPill, { backgroundColor: c.white }]}>
+          <View style={[styles.tinyDot, { backgroundColor: meta.color }]} />
+          <Txt weight="black" style={{ color: meta.color, fontSize: 10 }}>{meta.label}</Txt>
+        </View>
+      </Row>
+
+      {!verified ? (
+        <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 12, gap: 10 }}>
+          <Field label="Email code" value={token} onChangeText={(value) => setToken(value.replace(/\D/g, '').slice(0, 8))} placeholder="8-digit code" icon={Shield} keyboardType="numeric" />
+          <Grid columns={2} gap={10}>
+            <PrimaryButton label={verifying ? 'Checking...' : 'Verify code'} icon={verifying ? RefreshCw : Check} disabled={verifying} onPress={verifyToken} style={{ minHeight: 42, borderRadius: 13 }} />
+            <PrimaryButton
+              label={sending ? 'Sending...' : secondsRemaining > 0 ? `Retry ${secondsRemaining}s` : 'Send email'}
+              tone="surface"
+              icon={sending ? RefreshCw : Mail}
+              disabled={!canSend}
+              onPress={sendVerification}
+              style={{ minHeight: 42, borderRadius: 13 }}
+            />
+          </Grid>
+        </Animated.View>
+      ) : null}
+    </Card>
   );
 }
 
@@ -4329,14 +4468,17 @@ function getKycStatusMeta(status: KycStatus) {
   return map[status];
 }
 
-function SettingsScreen({ shellProps }: { shellProps: ShellProps }) {
+function SettingsScreen({ shellProps, profile, setProfile }: { shellProps: ShellProps; profile: BusinessProfile; setProfile: React.Dispatch<React.SetStateAction<BusinessProfile>> }) {
   const { showToast } = useToast();
   const [toggles, setToggles] = useState({ darkMode: false, notifications: true, offlineSync: true });
+  const emailMeta = getEmailVerificationMeta(profile.emailVerificationStatus);
   return (
     <ScreenWrapper {...shellProps} title="Paramètres">
+      <EmailVerificationCard profile={profile} setProfile={setProfile} compact />
       <View style={styles.settingsList}>
         {[
           { icon: Globe, label: 'Langue', value: 'Français' },
+          { icon: Mail, label: 'Email', value: emailMeta.label },
           { icon: Moon, label: 'Mode Sombre', toggle: 'darkMode' as const },
           { icon: Bell, label: 'Notifications', toggle: 'notifications' as const },
           { icon: WifiOff, label: 'Sync hors ligne', toggle: 'offlineSync' as const },
@@ -4368,13 +4510,14 @@ function SettingsScreen({ shellProps }: { shellProps: ShellProps }) {
   );
 }
 
-function SecurityScreen({ shellProps }: { shellProps: ShellProps }) {
+function SecurityScreen({ shellProps, profile, setProfile }: { shellProps: ShellProps; profile: BusinessProfile; setProfile: React.Dispatch<React.SetStateAction<BusinessProfile>> }) {
   return (
     <ScreenWrapper {...shellProps} title="Sécurité">
       <View style={{ alignItems: 'center', marginBottom: 24 }}>
         <AnimatedMascot state="secure" size={100} />
         <Txt style={{ color: c.surface500, fontSize: 14, marginTop: 12 }}>Vos données sont chiffrées et sécurisées</Txt>
       </View>
+      <EmailVerificationCard profile={profile} setProfile={setProfile} compact />
       <View style={styles.settingsList}>
         {[
           { icon: Lock, label: 'Code PIN', value: 'Activé' },

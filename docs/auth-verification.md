@@ -1,45 +1,59 @@
-# Formalio Free MVP Auth Verification
+# Formalio Progressive MVP Auth Verification
 
-Formalio is currently configured for Supabase free-tier authentication without a custom domain, custom SMTP provider, or paid SMS provider.
+Formalio is configured for Supabase free-tier authentication without a custom domain, custom SMTP provider, or paid SMS provider. MVP onboarding is progressive: users can enter the app immediately after signup, while email verification is encouraged inside the profile, settings, and security areas.
 
 ## Current Free/Testing Mode
 
 - Email/password signup is enabled.
-- Email confirmation is enabled.
-- Forgot password and password reset use Supabase Auth recovery emails.
-- Resend verification uses Supabase Auth resend.
+- Supabase Auth email confirmation gating is disabled for MVP onboarding.
+- Formalio stores app-level verification state on `public.profiles`.
+- Signup attempts a non-blocking verification OTP/magic-link email after the session is created.
+- If the free email sender is rate-limited, the profile is marked `queued` or `deferred` instead of blocking account creation.
+- Forgot password and password reset still use Supabase Auth recovery emails.
 - Session persistence is handled by `@supabase/supabase-js` with Expo AsyncStorage.
 - Anonymous sign-ins are disabled.
 - SMS OTP is disabled for MVP mode.
-- Custom SMTP is disabled.
-- Custom email templates are not active; Supabase hosted default auth emails are used.
+- Custom SMTP and custom auth templates are disabled.
 
-Supabase's built-in email provider is suitable for MVP testing and preview builds, but it has very low delivery limits, may restrict delivery to authorized/team email addresses, and has no production deliverability guarantee.
+Supabase's built-in email provider is suitable for controlled MVP testing and preview builds, but it has very low delivery limits, may restrict delivery to authorized/team email addresses, and has no production deliverability guarantee.
+
+## Verification State
+
+`public.profiles` tracks:
+
+- `email_verification_status`: `unverified`, `sent`, `queued`, `deferred`, or `verified`.
+- `email_verified_at`
+- `email_verification_sent_at`
+- `email_verification_next_attempt_at`
+- `email_verification_attempts`
+- `email_verification_last_error`
+
+Do not use user-editable `raw_user_meta_data` for authorization decisions. If verification later gates high-risk features, enforce that from trusted profile columns, server-side functions, or app metadata.
 
 ## What Works Now
 
-- Signup creates a Supabase Auth user and blocks access until email verification completes.
-- The app shows an email OTP screen after signup.
-- Users can request another signup verification email with a 60-second resend cooldown.
-- Login uses email and password only.
-- Unverified users cannot log in because Supabase email confirmation is required.
+- Signup creates a Supabase Auth user and allows immediate app access.
+- The app attempts a verification email in the background.
+- Email send quota/rate-limit errors are converted into queued/deferred verification state.
+- Users see non-blocking verification reminders in Profile, Settings, and Security.
+- Users can resend verification after the cooldown.
+- Users can enter the received email OTP in-app.
+- Login uses email and password.
 - Forgot password sends a Supabase recovery email.
-- Recovery OTP verification opens the password reset screen.
 - Password reset updates the authenticated recovery session password.
 
 ## Free-Tier Limitations
 
-- Supabase built-in email sender is rate-limited. Current Supabase docs list 2 auth emails per hour for the built-in provider.
-- Some hosted Supabase projects only deliver built-in auth emails to addresses authorized through the Supabase organization/team while custom SMTP is disabled.
+- Supabase built-in email sender is rate-limited. Current Supabase docs list 2 auth emails per hour for email-send endpoints with the built-in provider.
 - Sender domain is controlled by Supabase, not Formalio.
-- Deliverability is best effort.
 - SMS OTP is not available without configuring an SMS provider.
 - Branded email templates are not active in this mode.
+- Public launch should move to custom SMTP before relying on verification delivery.
 
 ## Current Supabase Settings
 
 - `auth.email.enable_signup = true`
-- `auth.email.enable_confirmations = true`
+- `auth.email.enable_confirmations = false`
 - `auth.email.otp_length = 8`
 - `auth.email.otp_expiry = 3600`
 - `auth.email.smtp.enabled = false`
@@ -81,24 +95,26 @@ SMS OTP with Twilio:
 - Add `SUPABASE_AUTH_SMS_TWILIO_AUTH_TOKEN`.
 - Add `SUPABASE_AUTH_SMS_TWILIO_MESSAGE_SERVICE_SID`.
 - Enable `[auth.sms]` and `[auth.sms.twilio]` in `supabase/config.toml`.
-- Re-enable the SMS OTP UI in the Expo auth flow.
+- Re-enable SMS OTP UI only after provider testing.
 
 Production anti-abuse:
 
 - Enable CAPTCHA in Supabase Auth before public launch traffic.
-- Increase email/SMS limits only after real providers are configured.
+- Add custom SMTP before raising email limits.
+- Use Edge Functions or a background job to process queued verification requests.
+- Gate sensitive future features, not first login, behind verified email/KYC/trust checks.
 - Monitor Supabase Auth logs for failed OTP and recovery attempts.
 - Keep service-role, SMTP, and SMS provider credentials server-only.
 
 ## Verification Checklist
 
-1. Run `npx supabase config push --project-ref skxyktfeeozjzgsotekp`.
-2. Open the app with `npx expo start`.
-3. Create an account with a real email address.
-4. Confirm that a Supabase email arrives.
-5. Enter the 8-digit code if shown, or open the confirmation link from the email.
-6. Confirm the app does not enter the dashboard before verification.
-7. Test resend after the 60-second cooldown.
-8. Test forgot password with the same email.
-9. Enter the recovery code if shown, or open the recovery link.
-10. Set a new password and log in.
+1. Run `npx supabase db push`.
+2. Run `npx supabase config push --project-ref skxyktfeeozjzgsotekp`.
+3. Open the app with `npx expo start`.
+4. Create an account with a real email address.
+5. Confirm the app enters onboarding/dashboard without requiring email verification first.
+6. Open Profile, Settings, or Security and confirm the verification card is visible.
+7. Send or resend verification and confirm cooldown behavior.
+8. Enter the email OTP if delivered.
+9. Confirm the profile status changes to `verified`.
+10. Test forgot password with the same email.
