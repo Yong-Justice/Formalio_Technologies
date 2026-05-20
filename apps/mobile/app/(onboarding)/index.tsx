@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Screen } from '@/components/layout/Screen';
 import { Button } from '@/components/ui/Button';
+import { MobileMoneyIcon } from '@/components/MobileMoneyIcon';
 import { setJson, storageKeys } from '@/services/storage/mmkv';
 
 const slides = [
@@ -30,6 +31,12 @@ export default function OnboardingScreen() {
             placeholder="L6PZfSi_.AyE_3t7t7R**0o#DgR4"
             transition={180}
           />
+          {slide.title.includes('Mobile Money') ? (
+            <View className="mt-5 flex-row items-center gap-3">
+              <MobileMoneyIcon provider="mtn-momo" size={42} />
+              <MobileMoneyIcon provider="orange-money" size={42} />
+            </View>
+          ) : null}
           <Text className="mt-8 text-center text-3xl font-black text-navy">{slide.title}</Text>
           <Text className="mt-3 text-center text-base leading-6 text-surface-500">{slide.copy}</Text>
           <View className="mt-8 flex-row gap-2">
