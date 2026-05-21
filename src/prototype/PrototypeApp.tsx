@@ -523,7 +523,7 @@ function PrimaryButton({
     <Tap disabled={disabled} onPress={onPress} style={[styles.primaryButton, { backgroundColor: colors.bg, borderColor: colors.border }, style]}>
       <Row style={{ justifyContent: 'center', gap: 8 }}>
         {icon ? <Icon icon={icon} size={17} color={colors.text} /> : null}
-        <Txt weight="bold" style={{ color: colors.text, fontSize: 14 }}>
+        <Txt weight="bold" numberOfLines={1} style={{ color: colors.text, fontSize: 14, flexShrink: 1, textAlign: 'center' }}>
           {label}
         </Txt>
       </Row>
@@ -738,6 +738,7 @@ function BarChart({ data, keys, colors, labels = true, height = 150 }: { data: a
   const max = Math.max(...data.flatMap((d) => keys.map((k) => Number(d[k] ?? 0))), 1);
   const slot = width / data.length;
   const barWidth = Math.min(14, slot / (keys.length + 1));
+  const labelStride = Math.max(1, Math.ceil(data.length / 6));
   return (
     <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
       {[0, 1, 2, 3].map((line) => (
@@ -751,9 +752,9 @@ function BarChart({ data, keys, colors, labels = true, height = 150 }: { data: a
             const y = chartHeight - h + 4;
             return <Rect key={key} x={x} y={y} width={barWidth} height={h} rx="5" fill={colors[keyIndex]} />;
           })}
-          {labels ? (
+          {labels && (data.length <= 7 || i % labelStride === 0 || i === data.length - 1) ? (
             <TextSvg x={i * slot + slot / 2} y={height - 4} textAnchor="middle" fill={c.surface400} fontSize="9">
-              {d.name ?? d.label}
+              {String(d.name ?? d.label ?? '').slice(0, 6)}
             </TextSvg>
           ) : null}
         </G>
@@ -776,6 +777,7 @@ function AreaChart({ data, keys, colors, height = 150 }: { data: any[]; keys: st
   const width = Math.max(260, Math.min(viewportWidth, 430) - 64);
   const chartHeight = height - 24;
   const max = Math.max(...data.flatMap((d) => keys.map((k) => Number(d[k] ?? 0))), 1);
+  const labelStride = Math.max(1, Math.ceil(data.length / 6));
   const pointsFor = (key: string) =>
     data
       .map((d, i) => {
@@ -804,11 +806,13 @@ function AreaChart({ data, keys, colors, height = 150 }: { data: any[]; keys: st
           <Polyline points={pointsFor(key)} fill="none" stroke={colors[i]} strokeWidth={i === 0 ? 3 : 2.2} strokeLinecap="round" strokeLinejoin="round" />
         </G>
       ))}
-      {data.map((d, i) => (
-        <TextSvg key={d.name ?? d.label ?? i} x={data.length === 1 ? width / 2 : (i / (data.length - 1)) * width} y={height - 4} textAnchor="middle" fill={c.surface400} fontSize="9">
-          {d.name ?? d.label}
-        </TextSvg>
-      ))}
+      {data.map((d, i) =>
+        data.length <= 7 || i % labelStride === 0 || i === data.length - 1 ? (
+          <TextSvg key={d.name ?? d.label ?? i} x={data.length === 1 ? width / 2 : (i / (data.length - 1)) * width} y={height - 4} textAnchor="middle" fill={c.surface400} fontSize="9">
+            {String(d.name ?? d.label ?? '').slice(0, 6)}
+          </TextSvg>
+        ) : null,
+      )}
     </Svg>
   );
 }
@@ -849,37 +853,31 @@ function DonutChart({ data, size = 128 }: { data: { name: string; value: number;
 }
 
 function Segment<T extends string>({ value, options, onChange, style }: { value: T; options: { key: T; label: string; icon?: LucideIcon }[]; onChange: (v: T) => void; style?: StyleProp<ViewStyle> }) {
+  const compact = options.length >= 5;
   return (
     <View style={[styles.segment, style]}>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.segmentScrollContent, { minWidth: '100%' }]}
-      >
+      <View style={styles.segmentTrack}>
         {options.map((option) => {
           const selected = value === option.key;
-          const compact = options.length >= 5;
           return (
             <Tap
               key={option.key}
               onPress={() => onChange(option.key)}
               style={[
                 styles.segmentItem,
-                !compact && { flexGrow: 1 },
-                compact && styles.segmentItemScrollable,
+                compact && styles.segmentItemCompact,
                 selected && styles.segmentSelected,
               ]}
             >
-              {option.icon ? <Icon icon={option.icon} size={14} color={selected ? c.formalio700 : c.surface500} /> : null}
-              <Txt weight="bold" numberOfLines={1} style={{ color: selected ? c.formalio700 : c.surface500, fontSize: 11 }}>
+              {option.icon ? <Icon icon={option.icon} size={compact ? 12 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
+              <Txt weight="bold" numberOfLines={1} style={[styles.segmentLabel, compact && styles.segmentLabelCompact, { color: selected ? c.formalio700 : c.surface500 }]}>
                 {option.label}
               </Txt>
               {selected ? <Animated.View entering={FadeIn.duration(140)} style={styles.segmentGlow} /> : null}
             </Tap>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -925,6 +923,8 @@ function Field({
           onChangeText={onChangeText}
           placeholder={placeholder ? localizeRuntimeText(language, placeholder) : undefined}
           placeholderTextColor={c.surface400}
+          maxFontSizeMultiplier={1.05}
+          selectionColor={c.formalio500}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
           multiline={multiline}
@@ -3237,9 +3237,11 @@ function AddTransactionScreen({
             ))}
           </Grid>
         </View>
-        <PrimaryButton label="Saisie vocale Mosika AI" icon={Mic} onPress={openVoice} />
-        <PrimaryButton label="Scanner ticket, document ou reçu" tone="outline" icon={ScanLine} onPress={openScanner} />
-        <PrimaryButton label={isExpense ? 'Enregistrer la dépense' : 'Enregistrer le revenu'} tone={isExpense ? 'danger' : 'green'} icon={Check} onPress={handleSave} />
+        <View style={styles.addTransactionActions}>
+          <PrimaryButton label="Saisie vocale Mosika AI" icon={Mic} onPress={openVoice} style={styles.formActionButton} />
+          <PrimaryButton label="Scanner ticket, document ou reçu" tone="outline" icon={ScanLine} onPress={openScanner} style={styles.formActionButton} />
+          <PrimaryButton label={isExpense ? 'Enregistrer la dépense' : 'Enregistrer le revenu'} tone={isExpense ? 'danger' : 'green'} icon={Check} onPress={handleSave} style={styles.formActionButton} />
+        </View>
       </View>
     </ScreenWrapper>
   );
@@ -4108,12 +4110,12 @@ function ReportsScreen({ shellProps, openDownload, loanRequests, metrics, transa
         ].map((report) => (
           <Tap key={report.title} onPress={() => setSelectedReport(report.type)} style={styles.reportRow}>
             <ToneIcon icon={report.icon} tone={report.tone as any} />
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Txt weight="medium" style={{ fontSize: 13 }}>{report.title}</Txt>
               <Txt numberOfLines={1} style={{ color: c.surface500, fontSize: 11, marginTop: 2 }}>{report.desc}</Txt>
               <Txt style={{ color: c.surface400, fontSize: 10, marginTop: 4 }}>{report.date}</Txt>
             </View>
-            {report.status === 'ready' ? <Pill>Prêt</Pill> : <Pill tone="gold">Vide</Pill>}
+            {report.status === 'ready' ? <Pill style={styles.reportBadge}>Prêt</Pill> : <Pill tone="gold" style={styles.reportBadge}>Vide</Pill>}
             <Icon icon={ChevronRight} size={16} color={c.surface400} />
           </Tap>
         ))}
@@ -4918,9 +4920,11 @@ function ProfileScreen({
             { icon: HelpCircle, label: 'Aide & Support', action: () => navigate('help') },
           ].map((item, i) => (
             <Tap key={item.label} onPress={item.action} style={[styles.profileMenuItem, i > 0 && { borderTopWidth: 1, borderTopColor: c.surface100 }]}>
-              <Icon icon={item.icon} size={20} color={c.surface500} />
-              <Txt style={{ flex: 1, color: c.surface700, fontSize: 14 }}>{item.label}</Txt>
-              {item.badge ? <Pill>{item.badge}</Pill> : null}
+              <View style={styles.profileMenuIcon}>
+                <Icon icon={item.icon} size={18} color={c.surface500} />
+              </View>
+              <Txt numberOfLines={1} style={styles.profileMenuLabel}>{item.label}</Txt>
+              {item.badge ? <Pill style={styles.profileMenuBadge}>{item.badge}</Pill> : null}
               <Icon icon={ChevronRight} size={16} color={c.surface400} />
             </Tap>
           ))}
@@ -7065,10 +7069,14 @@ const styles = StyleSheet.create({
   authBack: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.surface50, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
   authTitle: { fontSize: 24, lineHeight: 31, marginTop: 20 },
   authSubtitle: { color: c.surface500, fontSize: 14, marginTop: 5, lineHeight: 20 },
-  segment: { backgroundColor: c.surface100, borderRadius: 14, padding: 4, overflow: 'hidden' },
+  segment: { width: '100%', backgroundColor: c.surface100, borderRadius: 14, padding: 4, overflow: 'hidden' },
+  segmentTrack: { width: '100%', flexDirection: 'row', alignItems: 'stretch', gap: 5 },
   segmentScrollContent: { flexDirection: 'row', gap: 5 },
-  segmentItem: { borderRadius: 11, minHeight: 40, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 9, position: 'relative', overflow: 'hidden' },
+  segmentItem: { flex: 1, minWidth: 0, borderRadius: 11, minHeight: 40, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 7, position: 'relative', overflow: 'hidden' },
+  segmentItemCompact: { gap: 3, paddingHorizontal: 3 },
   segmentItemScrollable: { minWidth: 78 },
+  segmentLabel: { fontSize: 11, lineHeight: 14, textAlign: 'center', flexShrink: 1 },
+  segmentLabelCompact: { fontSize: 9.5, lineHeight: 12 },
   segmentSelected: { backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   segmentGlow: { position: 'absolute', left: 10, right: 10, bottom: 4, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
   inputBox: { minHeight: 58, borderRadius: 18, backgroundColor: c.surface50, borderWidth: 2, borderColor: c.surface100, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -7145,12 +7153,14 @@ const styles = StyleSheet.create({
   ocrAutofillCard: { borderRadius: 18, borderWidth: 1, borderColor: c.info200, backgroundColor: c.info50, padding: 13 },
   ocrAutofillCell: { borderRadius: 12, borderWidth: 1, borderColor: c.info100, backgroundColor: c.white, padding: 10 },
   ocrRetryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, paddingHorizontal: 10, paddingVertical: 7 },
-  choiceCard: { minHeight: 74, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 6 },
+  addTransactionActions: { gap: 10, marginTop: 2, paddingBottom: 4 },
+  formActionButton: { minHeight: 52, borderRadius: 16 },
+  choiceCard: { minWidth: 0, minHeight: 74, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 6, shadowColor: c.surface900, shadowOpacity: 0.035, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
   choiceIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   mobileMoneyChoiceIcon: { borderWidth: 1, borderColor: c.surface200, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 6, elevation: 1 },
   choiceSelected: { borderColor: c.formalio300, backgroundColor: c.formalio50 },
   choiceSelectedExpense: { borderColor: c.danger200, backgroundColor: c.danger50 },
-  selectChip: { borderRadius: 9, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, paddingHorizontal: 12, paddingVertical: 8 },
+  selectChip: { minHeight: 36, borderRadius: 10, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
   selectChipActive: { borderColor: c.formalio300, backgroundColor: c.formalio50 },
   selectChipExpenseActive: { borderColor: c.danger200, backgroundColor: c.danger50 },
   treasuryHero: { borderRadius: 26, padding: 16, overflow: 'hidden' },
@@ -7188,7 +7198,8 @@ const styles = StyleSheet.create({
   infoCallout: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 16, borderWidth: 1, borderColor: c.info200, backgroundColor: c.info50, padding: 12 },
   exportButton: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: c.formalio700, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
   reportHero: { borderRadius: 18, padding: 16, marginBottom: 16 },
-  reportRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: c.white, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, padding: 14 },
+  reportRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.white, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, paddingHorizontal: 12, paddingVertical: 12, shadowColor: c.surface900, shadowOpacity: 0.045, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  reportBadge: { flexShrink: 0 },
   loanEmptyState: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderRadius: 18, borderWidth: 1, borderColor: c.gold200, backgroundColor: c.gold50, padding: 14 },
   loanTrackingCard: { borderRadius: 18, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, padding: 14, shadowColor: c.surface900, shadowOpacity: 0.04, shadowRadius: 10, elevation: 1 },
   loanStatusBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
@@ -7234,7 +7245,10 @@ const styles = StyleSheet.create({
   coverThemeSwatch: { height: 34, borderRadius: 10 },
   profileInfoRow: { gap: 10, minHeight: 48, paddingVertical: 5, borderTopWidth: 1, borderTopColor: c.surface100 },
   profileMenu: { backgroundColor: c.white, borderRadius: 20, borderWidth: 1, borderColor: c.surface200, overflow: 'hidden', shadowColor: c.surface900, shadowOpacity: 0.07, shadowRadius: 14, elevation: 3 },
-  profileMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 18, paddingVertical: 15 },
+  profileMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 11, minHeight: 58, paddingHorizontal: 14, paddingVertical: 12 },
+  profileMenuIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: c.surface50, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  profileMenuLabel: { flex: 1, minWidth: 0, color: c.surface700, fontSize: 13, lineHeight: 17 },
+  profileMenuBadge: { flexShrink: 0 },
   logoutButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 16 },
   settingsList: { backgroundColor: c.white, borderRadius: 18, borderWidth: 1, borderColor: c.surface200, overflow: 'hidden', marginBottom: 16 },
   settingsItem: { gap: 12, paddingHorizontal: 16, paddingVertical: 14 },

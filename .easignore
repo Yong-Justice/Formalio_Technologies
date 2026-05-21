@@ -8,6 +8,10 @@ build
 coverage
 .expo-export-check
 .expo-export-check/**
+apps
+apps/**
+supabase
+supabase/**
 *.log
 .env
 .env.*
