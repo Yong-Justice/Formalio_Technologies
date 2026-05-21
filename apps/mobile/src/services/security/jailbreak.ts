@@ -1,96 +1,88 @@
-  import { apiClient } from "@/services/api/client";
-  import { secureStorage, secureKeys } from "@/services/storage/secureStorage";
-  import { auditStorage } from "@/services/storage/mmkv";
+import { Platform } from "react-native";
+import { apiClient } from "@/services/api/client";
+import { secureStorage, secureKeys } from "@/services/storage/secureStorage";
+import { auditStorage } from "@/services/storage/mmkv";
 
-  export type IntegrityResult = {
-    isCompromised: boolean;
-    reasons: string[];
+export type IntegrityResult = {
+  isCompromised: boolean;
+  reasons: string[];
+};
+
+type DeviceIntegrityProvider = {
+  check: () => IntegrityResult;
+};
+
+const nativeIntegrityProvider: DeviceIntegrityProvider | null = null;
+
+function checkWithNativeProvider(): IntegrityResult {
+  if (!nativeIntegrityProvider) {
+    return { isCompromised: false, reasons: [] };
+  }
+
+  return nativeIntegrityProvider.check();
+}
+
+export function checkDeviceIntegrity(): IntegrityResult {
+  return checkWithNativeProvider();
+}
+
+function writeAuditLog(reasons: string[]) {
+  const entry = {
+    ts: new Date().toISOString(),
+    event: "device_integrity_failure",
+    reasons,
   };
+  const existing = auditStorage.getString("audit.integrity_log");
+  const log: unknown[] = existing ? JSON.parse(existing) : [];
+  log.push(entry);
+  auditStorage.set("audit.integrity_log", JSON.stringify(log.slice(-100)));
+}
 
-  type JailMonkeyModule = {
-    isJailBroken: () => boolean;
-    hookDetected: () => boolean;
-    canMockLocation: () => boolean;
-    isOnExternalStorage: () => boolean;
-    AdbEnabled: () => boolean;
-  };
-
-  function resolveJailMonkey(): JailMonkeyModule | null {
-    try {
-      return require("jail-monkey").default ?? require("jail-monkey");
-    } catch {
-      return null;
-    }
+async function reportToBackend(reasons: string[]) {
+  try {
+    const userId = await secureStorage.get(secureKeys.userId);
+    await apiClient.post("/v1/security/device-integrity", {
+      userId,
+      isCompromised: true,
+      reasons,
+      platform: Platform.OS,
+      reportedAt: new Date().toISOString(),
+    });
+  } catch {
+    // The device may be offline; local audit logging still preserves the event.
   }
+}
 
-  export function checkDeviceIntegrity(): IntegrityResult {
-    const JailMonkey = resolveJailMonkey();
-    if (!JailMonkey) return { isCompromised: false, reasons: [] };
+async function disableBiometricEnrollment() {
+  await secureStorage.remove(secureKeys.biometricEnrollment);
+}
 
-    const reasons: string[] = [];
-    if (JailMonkey.isJailBroken())       reasons.push("rooted_or_jailbroken");
-    if (JailMonkey.hookDetected())        reasons.push("runtime_hook_detected");
-    if (JailMonkey.canMockLocation())     reasons.push("mock_location_enabled");
-    if (JailMonkey.isOnExternalStorage()) reasons.push("app_on_external_storage");
-    if (JailMonkey.AdbEnabled())          reasons.push("adb_enabled");
-    return { isCompromised: reasons.length > 0, reasons };
+/**
+ * Run on app launch and before financial operations.
+ * The MVP uses a no-op provider until a React Native 0.76-compatible native
+ * integrity module is added.
+ */
+export async function runIntegrityCheck(): Promise<IntegrityResult> {
+  const result = checkDeviceIntegrity();
+  if (result.isCompromised) {
+    writeAuditLog(result.reasons);
+    await disableBiometricEnrollment();
+    void reportToBackend(result.reasons);
   }
+  return result;
+}
 
-  function writeAuditLog(reasons: string[]) {
-    const entry = { ts: new Date().toISOString(), event: "device_integrity_failure", reasons };
-    const existing = auditStorage.getString("audit.integrity_log");
-    const log: unknown[] = existing ? JSON.parse(existing) : [];
-    log.push(entry);
-    auditStorage.set("audit.integrity_log", JSON.stringify(log.slice(-100)));
-  }
+export class DeviceCompromisedError extends Error {
+  readonly reasons: string[];
 
-  async function reportToBackend(reasons: string[]) {
-    try {
-      const userId = await secureStorage.get(secureKeys.userId);
-      await apiClient.post("/v1/security/device-integrity", {
-        userId,
-        isCompromised: true,
-        reasons,
-        platform: require("react-native").Platform.OS,
-        reportedAt: new Date().toISOString(),
-      });
-    } catch {
-      // Silently swallow — device may be offline
-    }
+  constructor(reasons: string[]) {
+    super("Transaction blocked: device integrity check failed.");
+    this.name = "DeviceCompromisedError";
+    this.reasons = reasons;
   }
+}
 
-  async function disableBiometricEnrollment() {
-    await secureStorage.remove(secureKeys.biometricEnrollment);
-  }
-
-  /**
-   * Run on app launch and before any transaction.
-   * Returns result so the UI can show a warning banner — do not crash.
-   * Some legitimate users have rooted devices for accessibility reasons.
-   */
-  export async function runIntegrityCheck(): Promise<IntegrityResult> {
-    const result = checkDeviceIntegrity();
-    if (result.isCompromised) {
-      writeAuditLog(result.reasons);
-      await disableBiometricEnrollment();
-      void reportToBackend(result.reasons);
-    }
-    return result;
-  }
-
-  /** Thrown by assertDeviceIntegrity() to block transaction initiation */
-  export class DeviceCompromisedError extends Error {
-    readonly reasons: string[];
-    constructor(reasons: string[]) {
-      super("Transaction blocked: device integrity check failed.");
-      this.name = "DeviceCompromisedError";
-      this.reasons = reasons;
-    }
-  }
-
-  /** Call at the start of every financial operation — throws if compromised */
-  export async function assertDeviceIntegrity(): Promise<void> {
-    const result = await runIntegrityCheck();
-    if (result.isCompromised) throw new DeviceCompromisedError(result.reasons);
-  }
-  
+export async function assertDeviceIntegrity(): Promise<void> {
+  const result = await runIntegrityCheck();
+  if (result.isCompromised) throw new DeviceCompromisedError(result.reasons);
+}

@@ -1,9 +1,25 @@
 import "dotenv/config";
 import type { ExpoConfig } from "expo/config";
 
+const sentryPlugin: NonNullable<ExpoConfig["plugins"]> =
+  process.env.SENTRY_AUTH_TOKEN &&
+  process.env.SENTRY_ORG &&
+  process.env.SENTRY_PROJECT
+    ? [
+        [
+          "@sentry/react-native",
+          {
+            organization: process.env.SENTRY_ORG,
+            project: process.env.SENTRY_PROJECT,
+          },
+        ],
+      ]
+    : [];
+
 const config: ExpoConfig = {
   name: "Formalio",
   slug: "formalio-mobile",
+  owner: "yongjustice",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/official-logo.png",
@@ -30,6 +46,7 @@ const config: ExpoConfig = {
   android: {
     package: "africa.formalio.mobile",
     versionCode: 1,
+    softwareKeyboardLayoutMode: "resize",
     adaptiveIcon: {
       foregroundImage: "./assets/images/official-logo.png",
       backgroundColor: "#052320",
@@ -49,7 +66,7 @@ const config: ExpoConfig = {
       "expo-notifications",
       { icon: "./assets/images/notification-icon.png", color: "#28A745" },
     ],
-    "@sentry/react-native",
+    ...sentryPlugin,
   ],
   experiments: {
     typedRoutes: false,
@@ -77,11 +94,11 @@ const config: ExpoConfig = {
       logo: "./assets/images/official-logo.png",
       socialPreview: "./assets/images/social-preview.png",
     },
-    eas: process.env.EXPO_PUBLIC_EAS_PROJECT_ID
-      ? {
-          projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID,
-        }
-      : undefined,
+    eas: {
+      projectId:
+        process.env.EXPO_PUBLIC_EAS_PROJECT_ID ??
+        "792092c6-07a1-4608-933f-bcc618880a62",
+    },
   },
 };
 

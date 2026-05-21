@@ -2,7 +2,6 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import {
   AppState,
   ActivityIndicator,
-  Dimensions,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -138,9 +137,6 @@ import { MobileMoneyIcon, getMobileMoneyProvider } from '@/components/MobileMone
 import { formalioBackend, type CloudFinancialMetrics, type CloudReportExport, type CloudSubscription } from '@/services/cloud/formalioBackend';
 import { useNetworkStore } from '@/services/offline/network';
 import { localizeRuntimeText, translate, type SupportedLanguage } from '@/i18n';
-
-const { width: viewportWidth } = Dimensions.get('window');
-const contentMaxWidth = Math.min(viewportWidth, 430);
 
 const c = {
   formalio50: '#ecfdf5',
@@ -416,7 +412,7 @@ function Txt({
   ));
 
   return (
-    <Text maxFontSizeMultiplier={1.08} numberOfLines={numberOfLines} style={[{ fontFamily: font[weight], color: c.surface900 }, style]}>
+    <Text maxFontSizeMultiplier={1.08} numberOfLines={numberOfLines} style={[{ fontFamily: font[weight], color: c.surface900, includeFontPadding: true }, style]}>
       {localizedChildren}
     </Text>
   );
@@ -736,7 +732,8 @@ function ValueBar({ value, color = c.formalio500, track = c.surface100 }: { valu
 }
 
 function BarChart({ data, keys, colors, labels = true, height = 150 }: { data: any[]; keys: string[]; colors: string[]; labels?: boolean; height?: number }) {
-  const width = contentMaxWidth - 64;
+  const { width: viewportWidth } = useWindowDimensions();
+  const width = Math.max(260, Math.min(viewportWidth, 430) - 64);
   const chartHeight = height - 24;
   const max = Math.max(...data.flatMap((d) => keys.map((k) => Number(d[k] ?? 0))), 1);
   const slot = width / data.length;
@@ -775,7 +772,8 @@ function TextSvg(props: any) {
 }
 
 function AreaChart({ data, keys, colors, height = 150 }: { data: any[]; keys: string[]; colors: string[]; height?: number }) {
-  const width = contentMaxWidth - 64;
+  const { width: viewportWidth } = useWindowDimensions();
+  const width = Math.max(260, Math.min(viewportWidth, 430) - 64);
   const chartHeight = height - 24;
   const max = Math.max(...data.flatMap((d) => keys.map((k) => Number(d[k] ?? 0))), 1);
   const pointsFor = (key: string) =>
@@ -853,18 +851,35 @@ function DonutChart({ data, size = 128 }: { data: { name: string; value: number;
 function Segment<T extends string>({ value, options, onChange, style }: { value: T; options: { key: T; label: string; icon?: LucideIcon }[]; onChange: (v: T) => void; style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[styles.segment, style]}>
-      {options.map((option) => {
-        const selected = value === option.key;
-        return (
-          <Tap key={option.key} onPress={() => onChange(option.key)} style={[styles.segmentItem, selected && styles.segmentSelected]}>
-            {option.icon ? <Icon icon={option.icon} size={14} color={selected ? c.formalio700 : c.surface500} /> : null}
-            <Txt weight="bold" style={{ color: selected ? c.formalio700 : c.surface500, fontSize: 11 }}>
-              {option.label}
-            </Txt>
-            {selected ? <Animated.View entering={FadeIn.duration(140)} style={styles.segmentGlow} /> : null}
-          </Tap>
-        );
-      })}
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.segmentScrollContent, { minWidth: '100%' }]}
+      >
+        {options.map((option) => {
+          const selected = value === option.key;
+          const compact = options.length >= 5;
+          return (
+            <Tap
+              key={option.key}
+              onPress={() => onChange(option.key)}
+              style={[
+                styles.segmentItem,
+                !compact && { flexGrow: 1 },
+                compact && styles.segmentItemScrollable,
+                selected && styles.segmentSelected,
+              ]}
+            >
+              {option.icon ? <Icon icon={option.icon} size={14} color={selected ? c.formalio700 : c.surface500} /> : null}
+              <Txt weight="bold" numberOfLines={1} style={{ color: selected ? c.formalio700 : c.surface500, fontSize: 11 }}>
+                {option.label}
+              </Txt>
+              {selected ? <Animated.View entering={FadeIn.duration(140)} style={styles.segmentGlow} /> : null}
+            </Tap>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -974,13 +989,16 @@ function ScreenWrapper({
   notifications: typeof initialNotifications;
 }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const scrollY = useSharedValue(0);
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
     },
   });
-  const bottomPadding = showNav ? 112 : Math.max(24, insets.bottom + 16);
+  const bottomPadding = showNav ? 128 : Math.max(24, insets.bottom + 16);
+  const wrapperMaxWidth = Math.min(width, 430);
+  const navBottomOffset = Math.max(8, Math.min(18, insets.bottom || 10));
   const bottomTabs = [
     { key: 'home', label: 'Accueil', icon: Home, screen: 'dashboard' as Screen },
     { key: 'transactions', label: 'Activité', icon: Wallet, screen: 'transactions' as Screen },
@@ -1016,13 +1034,13 @@ function ScreenWrapper({
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[noPadding ? { paddingBottom: bottomPadding } : { padding: 16, paddingBottom: bottomPadding }, { alignSelf: 'center', width: '100%', maxWidth: contentMaxWidth }]}
+          contentContainerStyle={[noPadding ? { paddingBottom: bottomPadding } : { padding: 16, paddingBottom: bottomPadding }, { alignSelf: 'center', width: '100%', maxWidth: wrapperMaxWidth }]}
         >
           {children}
         </Animated.ScrollView>
       </Animated.View>
       {showNav ? (
-        <Animated.View entering={SlideInDown.springify().damping(24).stiffness(180)} style={[styles.bottomNav, { paddingBottom: Math.max(8, insets.bottom) }]}>
+        <Animated.View entering={SlideInDown.springify().damping(24).stiffness(180)} style={[styles.bottomNav, { bottom: navBottomOffset, paddingBottom: Math.max(8, Math.min(16, insets.bottom || 8)) }]}>
           {bottomTabs.map((tab) => {
             const selected = activeTab === tab.key;
             const isAdd = tab.key === 'add';
@@ -1033,7 +1051,7 @@ function ScreenWrapper({
                   setActiveTab(tab.key);
                   navigate(tab.screen);
                 }}
-                style={[styles.bottomNavItem, isAdd && { transform: [{ translateY: -18 }] }]}
+                style={[styles.bottomNavItem, selected && !isAdd && styles.bottomNavItemActive, isAdd && styles.bottomNavAddItem]}
               >
                 {isAdd ? (
                   <View style={styles.addTab}>
@@ -1042,7 +1060,7 @@ function ScreenWrapper({
                 ) : (
                   <>
                     <Icon icon={tab.icon} size={20} color={selected ? c.formalio700 : c.surface400} />
-                    <Txt weight="medium" style={{ fontSize: 10, color: selected ? c.formalio700 : c.surface400, marginTop: 3 }}>
+                    <Txt weight="medium" numberOfLines={1} style={[styles.bottomNavLabel, { color: selected ? c.formalio700 : c.surface400 }]}>
                       {tab.label}
                     </Txt>
                   </>
@@ -1099,8 +1117,22 @@ function HeaderUtilityActions({
   );
 }
 
-function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void }) {
+function AuthFlows({
+  onComplete,
+  profile = defaultBusinessProfile,
+  transactions = [],
+  notifications = [],
+  metrics = emptyFinancialMetrics,
+}: {
+  onComplete: (isNewUser: boolean) => void;
+  profile?: BusinessProfile;
+  transactions?: Transaction[];
+  notifications?: typeof initialNotifications;
+  metrics?: CloudFinancialMetrics;
+}) {
   const { showToast } = useToast();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const [screen, setScreen] = useState<AuthScreen>('splash');
   const [otpTarget, setOtpTarget] = useState('');
   const [credential, setCredential] = useState('');
@@ -1119,6 +1151,9 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
   const [biometricLabel, setBiometricLabel] = useState('Biométrie');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [onboardingIndex, setOnboardingIndex] = useState(0);
+  const authContentMaxWidth = Math.min(width, 430);
+  const compactAuth = height < 720;
+  const authMinHeight = Math.max(560, height - insets.top - insets.bottom);
 
   useEffect(() => {
     if (screen === 'splash') {
@@ -1252,8 +1287,18 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
 
   const shell = (children: React.ReactNode, bg = c.white) => (
     <SafeAreaView style={[styles.authShell, { backgroundColor: bg }]}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, width: '100%', maxWidth: contentMaxWidth, alignSelf: 'center' }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            flexGrow: 1,
+            width: '100%',
+            maxWidth: authContentMaxWidth,
+            alignSelf: 'center',
+            paddingBottom: Math.max(10, insets.bottom),
+          }}
+        >
           {children}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1263,7 +1308,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
   if (screen === 'welcome') {
     const slide = onboardingSlides[onboardingIndex];
     return shell(
-      <View style={styles.welcomeScreen}>
+      <View style={[styles.welcomeScreen, { minHeight: authMinHeight }]}>
         <Row style={{ justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 18 }}>
           <Logo size={34} />
           <Tap onPress={() => setOnboardingIndex(onboardingSlides.length - 1)} style={{ padding: 8 }}>
@@ -1274,7 +1319,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
         </Row>
         <View style={styles.welcomeCenter}>
           <Animated.View key={onboardingIndex} entering={SlideInRight.duration(330)} exiting={FadeOut.duration(120)} style={{ alignItems: 'center' }}>
-            <AnimatedMascot state={slide.mascot} size={170} />
+            <AnimatedMascot state={slide.mascot} size={compactAuth ? 132 : 170} />
             <Txt weight="bold" style={styles.welcomeTitle}>
               {slide.title}
             </Txt>
@@ -1293,13 +1338,13 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             ))}
           </Row>
         </View>
-        <View style={{ paddingHorizontal: 24, paddingBottom: 28, gap: 12 }}>
+        <View style={[styles.welcomeActions, { paddingBottom: Math.max(22, insets.bottom + 14) }]}>
           {onboardingIndex < onboardingSlides.length - 1 ? (
-            <PrimaryButton label="Continuer" onPress={() => setOnboardingIndex(onboardingIndex + 1)} />
+            <PrimaryButton label="Continuer" onPress={() => setOnboardingIndex(onboardingIndex + 1)} style={styles.authPrimaryButton} />
           ) : (
             <>
-              <PrimaryButton label="Créer un compte" onPress={() => navigate('signup')} />
-              <PrimaryButton label="Se connecter" tone="outline" onPress={() => navigate('login')} />
+              <PrimaryButton label="Créer un compte" onPress={() => navigate('signup')} style={styles.authPrimaryButton} />
+              <PrimaryButton label="Se connecter" tone="outline" onPress={() => navigate('login')} style={styles.authSecondaryButton} />
             </>
           )}
           <Txt style={{ textAlign: 'center', color: c.surface400, fontSize: 11, lineHeight: 16 }}>
@@ -1318,14 +1363,14 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
 
   if (screen === 'login') {
     return shell(
-      <View style={styles.formScreen}>
+      <View style={[styles.formScreen, compactAuth && styles.formScreenCompact]}>
         <Back />
         <Logo size={44} />
         <Txt weight="bold" style={styles.authTitle}>
           Bon retour ! 👋
         </Txt>
         <Txt style={styles.authSubtitle}>Connectez-vous à votre compte</Txt>
-        <View style={{ marginTop: 24, gap: 15 }}>
+        <View style={styles.authFormStack}>
           <Field
             label="Email"
             value={credential}
@@ -1363,6 +1408,7 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             label={loading ? 'Connexion...' : 'Se connecter'}
             icon={loading ? RefreshCw : ChevronRight}
             disabled={loading}
+            style={styles.authPrimaryButton}
             onPress={() => {
               const normalizedEmail = credential.trim().toLowerCase();
               if (!validateEmail(normalizedEmail)) return setErrors({ credential: 'Entrez un email valide.' });
@@ -1387,8 +1433,29 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
             }}
           />
           <Divider label="OU" />
-          <PrimaryButton label={biometricLoading ? 'Vérification...' : `Connexion ${biometricLabel}`} tone="outline" icon={biometricLoading ? RefreshCw : Fingerprint} disabled={biometricLoading} onPress={() => runBiometricAuth('login')} />
-          {!biometricAvailable ? <Txt style={{ color: c.surface400, fontSize: 11, lineHeight: 16, textAlign: 'center' }}>La biométrie apparaîtra dès qu'elle sera enregistrée sur l'appareil.</Txt> : null}
+          <View style={styles.biometricLoginCard}>
+            <Row style={{ gap: 10, alignItems: 'flex-start' }}>
+              <View style={styles.biometricLoginIcon}>
+                <Icon icon={Fingerprint} size={20} color={c.formalio700} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Txt weight="black" style={{ color: c.surface900, fontSize: 13 }}>
+                  Connexion sécurisée
+                </Txt>
+                <Txt style={{ color: c.surface500, fontSize: 11, lineHeight: 16, marginTop: 2 }}>
+                  {biometricAvailable ? `${biometricLabel} disponible sur cet appareil.` : 'Ajoutez Face ID ou une empreinte dans les réglages de votre appareil.'}
+                </Txt>
+              </View>
+            </Row>
+            <PrimaryButton
+              label={biometricLoading ? 'Vérification...' : `Connexion ${biometricLabel}`}
+              tone="outline"
+              icon={biometricLoading ? RefreshCw : Fingerprint}
+              disabled={biometricLoading}
+              onPress={() => runBiometricAuth('login')}
+              style={styles.biometricLoginButton}
+            />
+          </View>
         </View>
         <InlineLink text="Pas encore de compte ?" action="Créer un compte" onPress={() => navigate('signup')} />
       </View>
@@ -1829,25 +1896,32 @@ function AuthFlows({ onComplete }: { onComplete: (isNewUser: boolean) => void })
   }
 
   if (screen === 'welcome-back') {
+    const displayName = profile.ownerFullName?.trim() || name.trim() || email.split('@')[0] || 'Formalio user';
+    const recentSample = transactions.slice(0, 6);
+    const recentNet = recentSample.reduce((sum, item) => sum + (item.type === 'income' ? item.amount : -item.amount), 0);
+    const unreadCount = notifications.filter((item) => !item.read).length;
+    const activityLabel = metrics.emptyState
+      ? 'Aucune activité enregistrée pour ce compte.'
+      : `${metrics.revenueCount} revenus · ${metrics.expenseCount} dépenses`;
     return shell(
-      <LinearGradient colors={[c.formalio50, c.white]} style={styles.successScreen}>
-        <AnimatedMascot state="celebrate" size={160} />
-        <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center', marginTop: 24 }]}>Content de vous revoir, Marie ! 🎉</Txt>
-        <Txt style={[styles.authSubtitle, { textAlign: 'center', marginTop: 12 }]}>Voici un résumé de votre activité depuis votre dernière connexion</Txt>
-        <Card style={{ width: '100%', marginTop: 24, padding: 20 }}>
-          <Txt style={{ color: c.surface500, fontSize: 12, marginBottom: 12 }}>Depuis hier</Txt>
+      <LinearGradient colors={[c.formalio50, c.white]} style={[styles.successScreen, { minHeight: authMinHeight }]}>
+        <AnimatedMascot state="celebrate" size={compactAuth ? 118 : 150} />
+        <Txt weight="bold" style={[styles.authTitle, { textAlign: 'center', marginTop: 18 }]}>Happy to see you, {displayName}.</Txt>
+        <Txt style={[styles.authSubtitle, { textAlign: 'center', marginTop: 10 }]}>Votre espace Formalio est synchronisé avec vos données réelles.</Txt>
+        <Card style={styles.welcomeBackCard}>
+          <Txt weight="black" style={{ color: c.surface900, fontSize: 13, marginBottom: 12 }}>Aperçu rapide</Txt>
           {[
-            ['Nouvelles transactions', '+12', c.formalio700],
-            ['Score Mosika', '0 (a construire)', c.gold600],
-            ['Notifications', '3 nouvelles', c.gold600],
+            ['Transactions récentes', `${recentSample.length} · ${formatFCFA(recentNet)}`, c.formalio700],
+            ['Notifications', unreadCount ? `${unreadCount} à lire` : 'Aucune alerte', unreadCount ? c.gold600 : c.surface500],
+            ['Activité', activityLabel, metrics.emptyState ? c.surface500 : c.info600],
           ].map(([label, value, color]) => (
-            <Row key={label} style={{ justifyContent: 'space-between', paddingVertical: 6 }}>
-              <Txt style={{ color: c.surface600, fontSize: 13 }}>{label}</Txt>
-              <Txt weight="bold" style={{ color, fontSize: 13 }}>{value}</Txt>
+            <Row key={label} style={styles.welcomeBackRow}>
+              <Txt style={{ color: c.surface600, fontSize: 12 }}>{label}</Txt>
+              <Txt weight="bold" numberOfLines={1} style={{ color, fontSize: 12, flexShrink: 1, textAlign: 'right' }}>{value}</Txt>
             </Row>
           ))}
         </Card>
-        <PrimaryButton label="Accéder au tableau de bord" icon={ChevronRight} onPress={() => onComplete(false)} style={{ width: '100%', marginTop: 30 }} />
+        <PrimaryButton label="Accéder au tableau de bord" icon={ChevronRight} onPress={() => onComplete(false)} style={[styles.authPrimaryButton, { width: '100%', marginTop: 24 }]} />
       </LinearGradient>
     );
   }
@@ -1922,29 +1996,39 @@ function InlineLink({ text, action, onPress }: { text: string; action: string; o
 }
 
 function MosikaScore({ score = 0, showDetails = true, metrics = emptyFinancialMetrics }: { score?: number; showDetails?: boolean; metrics?: CloudFinancialMetrics }) {
-  const level = score >= 820 && metrics.scoreConfidence >= 70
+  const safeMetrics: CloudFinancialMetrics = { ...emptyFinancialMetrics, ...(metrics ?? {}) };
+  const numeric = (value: unknown, fallback = 0) => {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : fallback;
+  };
+  const safeScore = Math.max(0, Math.min(1000, Math.round(numeric(score, safeMetrics.mosikaScore))));
+  const safeConfidence = Math.max(0, Math.min(100, Math.round(numeric(safeMetrics.scoreConfidence))));
+  const safeHealth = Math.max(0, Math.min(100, Math.round(numeric(safeMetrics.financialHealth))));
+  const safeGrowth = numeric(safeMetrics.growthRate);
+  const level = safeScore >= 820 && safeConfidence >= 70
     ? { label: 'Institutionnel', risk: 'Faible', color: c.formalio500 }
-    : score >= 700 && metrics.scoreConfidence >= 55
+    : safeScore >= 700 && safeConfidence >= 55
       ? { label: 'Solide', risk: 'Modere', color: '#22c55e' }
-      : score >= 560
+      : safeScore >= 560
         ? { label: 'En construction', risk: 'Surveille', color: c.gold500 }
-        : score >= 350
+        : safeScore >= 350
           ? { label: 'Risque eleve', risk: 'Eleve', color: c.gold600 }
           : { label: 'Non etabli', risk: 'Non evalue', color: c.danger500 };
   const circumference = 264;
-  const factor = (key: string) => Math.round(Number(metrics.scoreFactors?.[key] ?? 0));
+  const factor = (key: string) => Math.max(0, Math.min(100, Math.round(numeric(safeMetrics.scoreFactors?.[key]))));
   const scoreMetrics = [
-    { label: 'Santé financière', value: `${metrics.financialHealth}%`, icon: Shield, bg: c.formalio50, color: c.formalio700 },
-    { label: 'Risque', value: `${Math.max(0, 100 - metrics.financialHealth)}%`, icon: Zap, bg: c.gold50, color: c.gold600 },
-    { label: 'Confiance modèle', value: `${metrics.scoreConfidence}%`, icon: Award, bg: c.info50, color: c.info600 },
-    { label: 'Croissance', value: `${metrics.growthRate.toFixed(1)}%`, icon: TrendingUp, bg: c.formalio50, color: c.formalio700 },
+    { label: 'Santé financière', value: `${safeHealth}%`, icon: Shield, bg: c.formalio50, color: c.formalio700 },
+    { label: 'Risque', value: `${Math.max(0, 100 - safeHealth)}%`, icon: Zap, bg: c.gold50, color: c.gold600 },
+    { label: 'Confiance modèle', value: `${safeConfidence}%`, icon: Award, bg: c.info50, color: c.info600 },
+    { label: 'Croissance', value: `${safeGrowth.toFixed(1)}%`, icon: TrendingUp, bg: c.formalio50, color: c.formalio700 },
   ];
-  const historyData = (metrics.dailyCashflow.length ? metrics.dailyCashflow.slice(-6) : Array.from({ length: 6 }, (_, index) => ({ label: `M${index + 1}` }))).map((item, index) => ({
+  const cashflowHistory = Array.isArray(safeMetrics.dailyCashflow) ? safeMetrics.dailyCashflow : [];
+  const historyData = (cashflowHistory.length ? cashflowHistory.slice(-6) : Array.from({ length: 6 }, (_, index) => ({ label: `M${index + 1}` }))).map((item, index) => ({
     label: item.label,
-    score: metrics.emptyState ? 0 : Math.max(0, Math.min(1000, score - (5 - index) * Math.max(2, Math.round(Math.abs(metrics.growthRate) / 10)))),
+    score: safeMetrics.emptyState ? 0 : Math.max(0, Math.min(1000, safeScore - (5 - index) * Math.max(2, Math.round(Math.abs(safeGrowth) / 10)))),
   }));
   const performanceMetrics = [
-    ['Historique verifie', metrics.scoreConfidence],
+    ['Historique verifie', safeConfidence],
     ['Revenus stables', factor('revenueConsistency')],
     ['Maturite temps', factor('stability')],
     ['Discipline depenses', factor('expenseDiscipline')],
@@ -1960,7 +2044,7 @@ function MosikaScore({ score = 0, showDetails = true, metrics = emptyFinancialMe
               <Txt weight="semibold" style={{ color: c.formalio200, fontSize: 11 }}>✦ Mosika Score</Txt>
             </Pill>
             <Row style={{ alignItems: 'flex-end', gap: 8, marginTop: 14 }}>
-              <Txt weight="black" style={{ fontSize: 52, color: c.white, lineHeight: 56 }}>{score}</Txt>
+              <Txt weight="black" style={{ fontSize: 52, color: c.white, lineHeight: 56 }}>{safeScore}</Txt>
               <View style={{ paddingBottom: 7 }}>
                 <Txt weight="bold" style={{ color: level.color, fontSize: 14 }}>{level.label}</Txt>
                 <Txt style={{ color: 'rgba(255,255,255,.55)', fontSize: 11 }}>Risque {level.risk}</Txt>
@@ -1973,7 +2057,7 @@ function MosikaScore({ score = 0, showDetails = true, metrics = emptyFinancialMe
           <View style={{ width: 112, height: 112 }}>
             <Svg width={112} height={112} viewBox="0 0 100 100">
               <Circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,.12)" strokeWidth="9" />
-              <Circle cx="50" cy="50" r="42" fill="none" stroke={level.color} strokeWidth="9" strokeLinecap="round" strokeDasharray={`${circumference}`} strokeDashoffset={circumference - (score / 1000) * circumference} rotation="-90" origin="50,50" />
+              <Circle cx="50" cy="50" r="42" fill="none" stroke={level.color} strokeWidth="9" strokeLinecap="round" strokeDasharray={`${circumference}`} strokeDashoffset={circumference - (safeScore / 1000) * circumference} rotation="-90" origin="50,50" />
             </Svg>
             <View style={styles.scoreRingCenter}>
               <Icon icon={Shield} size={24} color="rgba(255,255,255,.82)" />
@@ -1985,7 +2069,7 @@ function MosikaScore({ score = 0, showDetails = true, metrics = emptyFinancialMe
           {[
             ['Niveau', level.label],
             ['Risque', level.risk],
-            ['Confiance', `${metrics.scoreConfidence}%`],
+            ['Confiance', `${safeConfidence}%`],
           ].map(([label, value]) => (
             <View key={label} style={styles.scoreChip}>
               <Txt weight="semibold" style={{ color: 'rgba(255,255,255,.45)', fontSize: 9, letterSpacing: 0 }}>{label.toUpperCase()}</Txt>
@@ -2030,7 +2114,7 @@ function MosikaScore({ score = 0, showDetails = true, metrics = emptyFinancialMe
             <Icon icon={CheckCircle2} size={20} color={c.formalio700} />
             <View style={{ flex: 1 }}>
               <Txt weight="bold" style={{ fontSize: 13 }}>Conseil Mosika</Txt>
-              <Txt style={{ color: c.surface600, fontSize: 12, marginTop: 4, lineHeight: 17 }}>{metrics.emptyState ? 'Ajoutez des transactions réelles pour faire évoluer votre score.' : 'Complétez la vérification, classez vos transactions et générez vos rapports pour renforcer votre score.'}</Txt>
+              <Txt style={{ color: c.surface600, fontSize: 12, marginTop: 4, lineHeight: 17 }}>{safeMetrics.emptyState ? 'Ajoutez des transactions réelles pour faire évoluer votre score.' : 'Complétez la vérification, classez vos transactions et générez vos rapports pour renforcer votre score.'}</Txt>
             </View>
           </View>
         </>
@@ -2454,6 +2538,10 @@ function StatusfulPrototype() {
   if (screen === 'auth') {
     return withLanguage(
       <AuthFlows
+        profile={profile}
+        transactions={transactions}
+        notifications={notifications}
+        metrics={financialMetrics}
         onComplete={async (isNewUser) => {
           showToast({ type: 'success', title: isNewUser ? 'Compte créé !' : 'Connexion réussie', message: isNewUser ? 'Bienvenue sur Formalio' : 'Bon retour !' });
           const loaded = await hydrateCloudData(true);
@@ -2584,6 +2672,7 @@ function DashboardScreen({
   navigate: (s: Screen) => void;
   openAi: () => void;
 }) {
+  const { width } = useWindowDimensions();
   const recentTransactions = transactions.slice(0, 4);
   const emptyState = metrics.emptyState || metrics.transactionCount === 0;
   const displayName = businessName || 'Formalio';
@@ -2592,6 +2681,8 @@ function DashboardScreen({
   const eligibleRatio = Math.max(0, Math.min(1, metrics.mosikaScore / 1000));
   const hasInstitutionalLoanSignal = !emptyState && metrics.mosikaScore >= 520 && metrics.scoreConfidence >= 45 && metrics.riskAssessmentLevel !== 'high';
   const estimatedLoan = hasInstitutionalLoanSignal ? Math.round((100000 + Math.pow(eligibleRatio, 2) * 1900000) / 50000) * 50000 : 0;
+  const compactQuick = width < 390;
+  const ultraCompactQuick = width < 350;
   const dashboardTip = emptyState
     ? 'Ajoutez vos premieres donnees, puis construisez plusieurs mois de regularite pour activer un Score Mosika credible.'
     : metrics.profit >= 0
@@ -2636,24 +2727,24 @@ function DashboardScreen({
             </Tap>
           </Row>
         </LinearGradient>
-        <Grid columns={4} gap={8}>
+        <View style={styles.dashboardQuickRow}>
           {[
             { label: 'Revenus', icon: TrendingUp, bg: c.formalio50, color: c.formalio700, value: formatCompactFCFA(metrics.revenue), screen: 'cashflow' as Screen },
             { label: 'Dépenses', icon: TrendingDown, bg: c.danger50, color: c.danger600, value: formatCompactFCFA(metrics.expenses), screen: 'cashflow' as Screen },
             { label: 'Score', icon: Award, bg: c.gold50, color: c.gold600, value: String(metrics.mosikaScore), screen: 'credit-score' as Screen },
             { label: 'Rapports', icon: FileText, bg: c.info50, color: c.info600, value: String(metrics.reportCount), screen: 'reports' as Screen },
           ].map((item, index) => (
-            <Animated.View key={item.label} entering={FadeIn.delay(index * 55).duration(220)} style={{ flex: 1 }}>
-              <Tap onPress={() => navigate(item.screen)} style={styles.quickAction}>
-                <View style={[styles.quickIcon, { backgroundColor: item.bg }]}>
-                  <Icon icon={item.icon} size={17} color={item.color} />
+            <Animated.View key={item.label} entering={FadeIn.delay(index * 55).duration(220)} style={[styles.dashboardQuickCell, index < 3 && styles.dashboardQuickCellGap]}>
+              <Tap onPress={() => navigate(item.screen)} style={[styles.quickAction, compactQuick && styles.quickActionCompact, ultraCompactQuick && styles.quickActionUltraCompact]}>
+                <View style={[styles.quickIcon, compactQuick && styles.quickIconCompact, { backgroundColor: item.bg }]}>
+                  <Icon icon={item.icon} size={compactQuick ? 14 : 17} color={item.color} />
                 </View>
-                <Txt weight="black" style={styles.quickValue}>{item.value}</Txt>
-                <Txt numberOfLines={1} style={styles.quickLabel}>{item.label}</Txt>
+                <Txt weight="black" numberOfLines={1} style={[styles.quickValue, compactQuick && styles.quickValueCompact]}>{item.value}</Txt>
+                <Txt numberOfLines={1} style={[styles.quickLabel, compactQuick && styles.quickLabelCompact]}>{item.label}</Txt>
               </Tap>
             </Animated.View>
           ))}
-        </Grid>
+        </View>
         <Tap onPress={() => navigate('accounting')} style={{ marginTop: 14 }}>
           <LinearGradient colors={[c.formalio800, c.formalio700, c.info600]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.aiAccounting}>
             <View style={[styles.softOrb, { right: -32, top: -36, width: 120, height: 120, backgroundColor: 'rgba(255,255,255,.1)' }]} />
@@ -5504,16 +5595,8 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
   const netProfit = metrics.profit;
   const margin = Math.round(metrics.profitMargin);
   const taxEstimate = metrics.taxDue;
-  const dailyData = [
-    { label: 'Lun', sales: 125000, expense: 45000 },
-    { label: 'Mar', sales: 89000, expense: 32000 },
-    { label: 'Mer', sales: 210000, expense: 75000 },
-    { label: 'Jeu', sales: 67000, expense: 15000 },
-    { label: 'Ven', sales: 145000, expense: 35000 },
-    { label: 'Sam', sales: 98000, expense: 22000 },
-    { label: 'Dim', sales: 56000, expense: 8000 },
-  ];
-  const periodData = (metrics.dailyCashflow.length ? metrics.dailyCashflow : dailyData).map((item) => ({
+  const emptyDailyData = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((label) => ({ label, sales: 0, expense: 0 }));
+  const periodData = (metrics.dailyCashflow.length ? metrics.dailyCashflow : emptyDailyData).map((item) => ({
     label: item.label,
     sales: 'income' in item ? item.income : item.sales,
     expense: item.expense,
@@ -5528,12 +5611,36 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
     value: Math.round(item.share || 0),
     color: [c.danger600, c.orange500, c.gold500, c.purple500, c.surface500][index % 5],
   }));
+  const hasAccountingData = !metrics.emptyState && transactions.length > 0;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIncome = transactions.filter((transaction) => transaction.date === todayIso && transaction.type === 'income').reduce((sum, transaction) => sum + transaction.amount, 0);
+  const expenseRatio = totalIncome > 0 ? Math.round((totalExpense / totalIncome) * 100) : 0;
+  const topIncomeCategory = categoryBreakdown.find((item) => item.name !== 'Aucun revenu');
+  const topExpenseCategory = expenseBreakdown.find((item) => item.name !== 'Aucune depense');
+  const anomalyRows = hasAccountingData
+    ? [
+        ...(metrics.riskIndicators?.amountAnomalies ? [{ label: 'Montants atypiques', desc: `${metrics.riskIndicators.amountAnomalies} mouvement(s) à vérifier`, tone: c.danger500 }] : []),
+        ...(metrics.riskIndicators?.duplicateReferences ? [{ label: 'Références doublons', desc: `${metrics.riskIndicators.duplicateReferences} doublon(s) potentiel(s)`, tone: c.gold500 }] : []),
+        { label: topExpenseCategory ? topExpenseCategory.name : 'Dépenses', desc: topExpenseCategory ? `${topExpenseCategory.value}% des dépenses` : 'Aucun poste dominant', tone: c.formalio500 },
+      ]
+    : [{ label: 'Aucune anomalie', desc: 'Ajoutez des transactions pour activer la détection.', tone: c.surface400 }];
+  const optimizationSuggestions = hasAccountingData
+    ? [
+        expenseRatio > 85 ? 'Réduire les charges variables avant toute demande de financement.' : 'Maintenir le ratio dépenses/revenus sous surveillance chaque semaine.',
+        metrics.profit < 0 ? 'Prioriser les encaissements et limiter les sorties non essentielles.' : 'Documenter les revenus récurrents pour renforcer la crédibilité du dossier.',
+        metrics.scoreConfidence < 45 ? 'Accumuler plusieurs mois de données régulières pour améliorer la confiance Mosika.' : 'Conserver les justificatifs et rapprochements pour stabiliser le score.',
+      ]
+    : ['Ajoutez vos premières transactions réelles pour produire des recommandations fiables.'];
   const runAIAnalysis = () => {
     setAiThinking(true);
     setAiAnalysis(null);
     setTimeout(() => {
       setAiThinking(false);
-      setAiAnalysis(`📊 Analyse Mosika AI · ${new Date().toLocaleDateString('fr-FR')}\n\n• Vos ventes ont augmenté de 23% ce mois (vs mois précédent).\n• Catégorie la plus rentable : Ventes marchandises (65% du CA).\n• ⚠️ Anomalie détectée : pic de dépenses "Transport" le mercredi (+180%).\n• 💡 Optimisation : négociez avec votre fournisseur principal (économie estimée: 45,000 FCFA/mois).\n• 📈 Prévision : à ce rythme, vous atteindrez 1.4M FCFA de profit en mars.\n• 🏦 Vous êtes éligible pour un prêt de croissance de 2M FCFA (taux préférentiel: 7.5%).`);
+      if (!hasAccountingData) {
+        setAiAnalysis(`Analyse Mosika AI · ${new Date().toLocaleDateString('fr-FR')}\n\n- Aucune transaction réelle n'est encore disponible pour ce compte.\n- Revenus analysés: ${formatFCFA(0)}.\n- Dépenses analysées: ${formatFCFA(0)}.\n- Score Mosika: ${metrics.mosikaScore}/1000 avec ${metrics.scoreConfidence}% de confiance.\n\nAjoutez des revenus, dépenses et justificatifs pour activer une analyse financière fiable.`);
+        return;
+      }
+      setAiAnalysis(`Analyse Mosika AI · ${new Date().toLocaleDateString('fr-FR')}\n\n- Revenus analysés: ${formatFCFA(totalIncome)}.\n- Dépenses analysées: ${formatFCFA(totalExpense)} (${expenseRatio}% des revenus).\n- Résultat net: ${formatFCFA(netProfit)} avec une marge de ${margin}%.\n- Catégorie de revenus dominante: ${topIncomeCategory ? `${topIncomeCategory.name} (${topIncomeCategory.value}%)` : 'non déterminée'}.\n- Catégorie de dépenses dominante: ${topExpenseCategory ? `${topExpenseCategory.name} (${topExpenseCategory.value}%)` : 'non déterminée'}.\n- Score Mosika: ${metrics.mosikaScore}/1000, confiance modèle ${metrics.scoreConfidence}%.\n\nRecommandation: ${optimizationSuggestions[0]}`);
     }, 1800);
   };
   const generateAIReport = (type: string) => {
@@ -5566,17 +5673,17 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
                 <Txt weight="semibold" style={{ color: c.formalio200, fontSize: 12 }}>Profit & Loss · mai</Txt>
               </Row>
               <Txt weight="black" style={{ color: c.white, fontSize: 34, lineHeight: 38 }}>{netProfit.toLocaleString('fr-FR')}<Txt weight="bold" style={{ color: c.formalio300, fontSize: 16 }}> FCFA</Txt></Txt>
-              <Txt style={{ color: c.formalio200, fontSize: 12, marginTop: 5 }}>Marge nette: <Txt weight="bold" style={{ color: c.formalio200, fontSize: 12 }}>{margin}%</Txt> · 📈 Profitable</Txt>
+              <Txt style={{ color: c.formalio200, fontSize: 12, marginTop: 5 }}>Marge nette: <Txt weight="bold" style={{ color: c.formalio200, fontSize: 12 }}>{margin}%</Txt> · {hasAccountingData ? (netProfit >= 0 ? 'Résultat positif' : 'Résultat négatif') : 'Données à compléter'}</Txt>
               <Grid columns={2} gap={8}>
                 <View style={styles.glassMetric}><Txt style={{ color: c.formalio200, fontSize: 10 }}>â†— Revenus</Txt><Txt weight="black" style={{ color: c.white, fontSize: 14 }}>{(totalIncome / 1000).toFixed(0)}K</Txt></View>
                 <View style={styles.glassMetric}><Txt style={{ color: c.formalio200, fontSize: 10 }}>↘ Dépenses</Txt><Txt weight="black" style={{ color: c.white, fontSize: 14 }}>{(totalExpense / 1000).toFixed(0)}K</Txt></View>
               </Grid>
             </LinearGradient>
             <Grid columns={2} gap={8}>
-              <AccKpi label="Ventes du jour" value="125K" sub="FCFA" icon={TrendingUp} delta={12} />
-              <AccKpi label="Cash Flow" value="+845K" sub="positif" icon={Wallet} delta={8} />
+              <AccKpi label="Ventes du jour" value={`${(todayIncome / 1000).toFixed(0)}K`} sub="FCFA" icon={TrendingUp} delta={hasAccountingData ? Math.round(metrics.growthRate) : undefined} />
+              <AccKpi label="Cash Flow" value={`${metrics.cashFlow >= 0 ? '+' : ''}${(metrics.cashFlow / 1000).toFixed(0)}K`} sub={metrics.cashFlow >= 0 ? 'positif' : 'négatif'} icon={Wallet} delta={hasAccountingData ? Math.round(metrics.growthRate) : undefined} />
               <AccKpi label="TVA estimée" value={`${(taxEstimate / 1000).toFixed(0)}K`} sub="à déclarer" icon={Receipt} tone="amber" />
-              <AccKpi label="Stock valeur" value="2.4M" sub="42 articles" icon={Package} />
+              <AccKpi label="Transactions" value={String(metrics.transactionCount)} sub="enregistrées" icon={Package} />
             </Grid>
             <Card>
               <PeriodPicker period={period} setPeriod={setPeriod} />
@@ -5585,13 +5692,13 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
             <Tap onPress={() => setAccTab('ai')} style={styles.aiInsightsBanner}>
               <LinearGradient colors={[c.info500, c.formalio700]} style={styles.aiBannerIcon}><Icon icon={BrainCircuit} size={20} color={c.white} /></LinearGradient>
               <View style={{ flex: 1 }}>
-                <Txt weight="bold" style={{ fontSize: 12 }}>Mosika AI a 3 insights</Txt>
-                <Txt numberOfLines={1} style={{ color: c.surface600, fontSize: 11 }}>Ventes +23%, anomalie transport détectée, prêt éligible</Txt>
+                <Txt weight="bold" style={{ fontSize: 12 }}>{hasAccountingData ? 'Mosika AI lit vos données' : 'Mosika AI attend vos données'}</Txt>
+                <Txt numberOfLines={1} style={{ color: c.surface600, fontSize: 11 }}>{hasAccountingData ? `${metrics.transactionCount} transactions · score ${metrics.mosikaScore}` : 'Ajoutez des transactions pour obtenir des insights.'}</Txt>
               </View>
               <Icon icon={ChevronRight} size={16} color={c.surface400} />
             </Tap>
             <Grid columns={2} gap={8}>
-              <Tap onPress={() => setAccTab('reports')} style={styles.accQuick}><View style={[styles.metricIcon, { backgroundColor: c.formalio50 }]}><Icon icon={FileText} size={16} color={c.formalio700} /></View><View><Txt weight="bold" style={{ fontSize: 12 }}>Rapports IA</Txt><Txt style={{ color: c.surface500, fontSize: 10 }}>8 disponibles</Txt></View></Tap>
+              <Tap onPress={() => setAccTab('reports')} style={styles.accQuick}><View style={[styles.metricIcon, { backgroundColor: c.formalio50 }]}><Icon icon={FileText} size={16} color={c.formalio700} /></View><View><Txt weight="bold" style={{ fontSize: 12 }}>Rapports IA</Txt><Txt style={{ color: c.surface500, fontSize: 10 }}>{metrics.reportCount} disponible(s)</Txt></View></Tap>
               <Tap onPress={() => navigate('tax')} style={styles.accQuick}><View style={[styles.metricIcon, { backgroundColor: c.gold50 }]}><Icon icon={Receipt} size={16} color={c.gold600} /></View><View><Txt weight="bold" style={{ fontSize: 12 }}>Estimation Fiscale</Txt><Txt style={{ color: c.surface500, fontSize: 10 }}>{(taxEstimate / 1000).toFixed(0)}K FCFA</Txt></View></Tap>
             </Grid>
           </>
@@ -5602,7 +5709,7 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
             <LinearGradient colors={[c.formalio700, c.formalio900]} style={styles.salesHero}>
               <Txt style={{ color: c.formalio200, fontSize: 12 }}>Chiffre d'affaires {period === 'daily' ? "aujourd'hui" : period === 'weekly' ? '(7 jours)' : period === 'monthly' ? '(30 jours)' : '(année)'}</Txt>
               <Txt weight="black" style={{ color: c.white, fontSize: 30, marginTop: 4 }}>{(periodData.reduce((s, d) => s + d.sales, 0) / 1000).toFixed(0)}K <Txt weight="bold" style={{ color: c.formalio300, fontSize: 16 }}>FCFA</Txt></Txt>
-              <Row style={{ gap: 6, marginTop: 8 }}><Icon icon={ArrowUpRight} size={13} color={c.formalio300} /><Txt style={{ color: c.formalio300, fontSize: 12 }}>+23% vs période précédente</Txt></Row>
+              <Row style={{ gap: 6, marginTop: 8 }}><Icon icon={ArrowUpRight} size={13} color={c.formalio300} /><Txt style={{ color: c.formalio300, fontSize: 12 }}>{hasAccountingData ? `${metrics.growthRate >= 0 ? '+' : ''}${metrics.growthRate.toFixed(1)}% vs période précédente` : 'Aucune tendance disponible'}</Txt></Row>
             </LinearGradient>
             <Card><Txt weight="bold" style={{ fontSize: 12, marginBottom: 8 }}>Tendance des ventes</Txt><BarChart data={periodData} keys={['sales']} colors={[c.formalio800]} height={166} /></Card>
             <Card>
@@ -5610,7 +5717,7 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
               <View style={{ alignItems: 'center' }}><DonutChart data={categoryBreakdown} size={126} /></View>
               {categoryBreakdown.map((item) => <LegendRow key={item.name} {...item} />)}
             </Card>
-            <View style={styles.adviceCard}><Icon icon={BrainCircuit} size={17} color={c.formalio700} /><View style={{ flex: 1 }}><Txt weight="bold" style={{ fontSize: 12 }}>Performance commerciale</Txt><Txt style={{ color: c.surface600, fontSize: 11, lineHeight: 16, marginTop: 3 }}>Vos meilleurs jours sont mardi et vendredi. Augmentez votre stock le lundi pour maximiser ces pics.</Txt></View></View>
+            <View style={styles.adviceCard}><Icon icon={BrainCircuit} size={17} color={c.formalio700} /><View style={{ flex: 1 }}><Txt weight="bold" style={{ fontSize: 12 }}>Performance commerciale</Txt><Txt style={{ color: c.surface600, fontSize: 11, lineHeight: 16, marginTop: 3 }}>{hasAccountingData ? `Revenus dominants: ${topIncomeCategory ? topIncomeCategory.name : 'non déterminé'}. Suivez la régularité avant d'augmenter vos charges.` : 'Ajoutez des ventes pour identifier les catégories et les jours les plus performants.'}</Txt></View></View>
           </>
         ) : null}
         {accTab === 'expenses' ? (
@@ -5618,7 +5725,7 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
             <LinearGradient colors={[c.danger500, c.danger700]} style={styles.salesHero}>
               <Txt style={{ color: c.danger100, fontSize: 12 }}>Dépenses totales (mois)</Txt>
               <Txt weight="black" style={{ color: c.white, fontSize: 30, marginTop: 4 }}>{(totalExpense / 1000).toFixed(0)}K <Txt weight="bold" style={{ color: c.danger200, fontSize: 16 }}>FCFA</Txt></Txt>
-              <Row style={{ gap: 6, marginTop: 8 }}><Icon icon={ArrowDownRight} size={13} color={c.danger100} /><Txt style={{ color: c.danger100, fontSize: 12 }}>-8% vs mois précédent · économie 42K</Txt></Row>
+              <Row style={{ gap: 6, marginTop: 8 }}><Icon icon={ArrowDownRight} size={13} color={c.danger100} /><Txt style={{ color: c.danger100, fontSize: 12 }}>{hasAccountingData ? `${expenseRatio}% des revenus` : 'Aucune dépense enregistrée'}</Txt></Row>
             </LinearGradient>
             <Card>
               <Txt weight="bold" style={{ fontSize: 12, marginBottom: 12 }}>Top catégories de dépenses</Txt>
@@ -5634,11 +5741,7 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
                 <Txt weight="bold" style={{ fontSize: 12 }}>Détection d'anomalies IA</Txt>
                 <Row style={{ gap: 5 }}><View style={styles.liveDot} /><Txt weight="bold" style={{ color: c.formalio700, fontSize: 10 }}>Live</Txt></Row>
               </Row>
-              {[
-                { label: 'Transport mercredi', desc: '+180% vs moyenne', tone: c.danger500 },
-                { label: 'Recharge téléphone', desc: '3 paiements identiques', tone: c.gold500 },
-                { label: 'Achat stock', desc: 'Pattern stable', tone: c.formalio500 },
-              ].map((item) => (
+              {anomalyRows.map((item) => (
                 <Row key={item.label} style={styles.anomalyRow}>
                   <View style={[styles.tinyDot, { backgroundColor: item.tone }]} />
                   <View style={{ flex: 1 }}><Txt weight="bold" style={{ fontSize: 11 }}>{item.label}</Txt><Txt style={{ color: c.surface500, fontSize: 10 }}>{item.desc}</Txt></View>
@@ -5665,15 +5768,15 @@ function AccountingScreen({ shellProps, transactions, metrics, navigate, openDow
             ) : null}
             <Grid columns={2} gap={8}>
               {[
-                { icon: TrendingUp, t: 'Prédiction de revenus', d: '92% précision', tone: 'green' },
-                { icon: AlertTriangle, t: 'Détection anomalies', d: '3 alertes actives', tone: 'amber' },
-                { icon: Sparkles, t: 'Recommandations IA', d: '5 actions suggérées', tone: 'blue' },
-                { icon: Calculator, t: 'Auto-catégorisation', d: '98% transactions', tone: 'green' },
+                { icon: TrendingUp, t: 'Tendance revenus', d: hasAccountingData ? `${metrics.growthRate.toFixed(1)}% observé` : 'en attente', tone: 'green' },
+                { icon: AlertTriangle, t: 'Détection anomalies', d: `${anomalyRows.filter((item) => item.tone !== c.formalio500 && item.tone !== c.surface400).length} alerte(s)`, tone: 'amber' },
+                { icon: Sparkles, t: 'Recommandations IA', d: `${optimizationSuggestions.length} action(s)`, tone: 'blue' },
+                { icon: Calculator, t: 'Transactions classées', d: `${metrics.transactionCount} transaction(s)`, tone: 'green' },
               ].map((item) => <CapabilityCard key={item.t} {...item} />)}
             </Grid>
             <View style={styles.optimizationBox}>
               <Row style={{ gap: 5, marginBottom: 8 }}><Icon icon={Zap} size={15} color={c.gold600} /><Txt weight="bold" style={{ color: c.gold700, fontSize: 12 }}>Suggestions d'optimisation</Txt></Row>
-              {['Réduire dépenses transport de 15% (économie: 22K FCFA/mois)', 'Augmenter prix vente moyens de 8% (sans perte client)', 'Négocier paiements échelonnés avec fournisseur principal'].map((txt) => <Row key={txt} style={{ gap: 8, marginTop: 5, alignItems: 'flex-start' }}><Icon icon={Check} size={12} color={c.gold700} /><Txt style={{ color: c.gold700, fontSize: 11, lineHeight: 16, flex: 1 }}>{txt}</Txt></Row>)}
+              {optimizationSuggestions.map((txt) => <Row key={txt} style={{ gap: 8, marginTop: 5, alignItems: 'flex-start' }}><Icon icon={Check} size={12} color={c.gold700} /><Txt style={{ color: c.gold700, fontSize: 11, lineHeight: 16, flex: 1 }}>{txt}</Txt></Row>)}
             </View>
           </>
         ) : null}
@@ -5891,6 +5994,11 @@ function AIAssistant({ isOpen, onClose, transactions, loanRequests, metrics, com
   const profit = metrics.profit;
   const healthScore = metrics.financialHealth;
   const dailyTransactions = transactions.slice(0, 5);
+  const expenseCategoryItems = metrics.categoryBreakdown.filter((item) => item.type === 'expense' && item.share > 0);
+  const incomeCategoryItems = metrics.categoryBreakdown.filter((item) => item.type === 'income' && item.share > 0);
+  const topExpense = expenseCategoryItems[0];
+  const topIncome = incomeCategoryItems[0];
+  const currentExpenseRatio = totalIncome > 0 ? Math.round((totalExpense / totalIncome) * 100) : 0;
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, type: 'ai', content: metrics.emptyState ? t('ai.helloEmpty') : `${t('ai.helloWithData')} Revenus: ${formatFCFA(metrics.revenue)}, dépenses: ${formatFCFA(metrics.expenses)}, Score Mosika ${metrics.mosikaScore}.`, timestamp: new Date(), suggestions: ['Voir mes dépenses', 'Quel profit ai-je réalisé ?', 'Analyser mon activité', 'Vérifier mon éligibilité'] },
   ]);
@@ -5928,13 +6036,13 @@ function AIAssistant({ isOpen, onClose, transactions, loanRequests, metrics, com
   }, [isOpen, resetVoiceNote]);
   const getAIResponse = (userMessage: string): Pick<Message, 'content' | 'suggestions' | 'action'> => {
     const lower = userMessage.toLowerCase();
-    if (lower.includes('download') || lower.includes('rapport') || lower.includes('report') || lower.includes('export')) return { content: "Je peux préparer le rapport mensuel en PDF ou Excel. Votre dernier portefeuille de rapports contient bilan, résultat, trésorerie et TVA. Pour l'instant je simule l'export côté frontend, mais la structure est prête pour brancher le service documentaire.", suggestions: ['Télécharger le rapport mensuel', 'Résumer les rapports', 'Retrouver le rapport TVA'], action: 'report' };
-    if (lower.includes('invoice') || lower.includes('facture') || lower.includes('unpaid')) return { content: "Je ne vois pas encore de module factures connecté dans cette démo. Je peux tout de même créer une vue mock : 3 factures à suivre, 1 retard estimé et un rappel recommandé pour préserver le cash flow.", suggestions: ['Créer un rappel facture', 'Voir le risque de trésorerie', 'Exporter les créances'], action: 'alert' };
-    if (lower.includes('profit') || lower.includes('bénéf') || lower.includes('benef') || lower.includes('make')) return { content: `Votre profit net estimé est de ${formatFCFA(profit)}.\n\nRevenus analysés: ${formatFCFA(totalIncome)}\nDépenses analysées: ${formatFCFA(totalExpense)}\nMarge indicative: ${totalIncome ? Math.round((profit / totalIncome) * 100) : 0}%\n\nLecture Mosika: l'activité reste saine si vous gardez les achats stock sous contrôle et sécurisez les encaissements Mobile Money.`, suggestions: ['Analyser mon activité', 'Voir mes dépenses', 'Télécharger le rapport mensuel'], action: 'insight' };
+    if (lower.includes('download') || lower.includes('rapport') || lower.includes('report') || lower.includes('export')) return { content: metrics.emptyState ? "Aucun rapport financier fiable n'est encore disponible pour ce compte. Ajoutez des transactions réelles pour générer un bilan, un compte de résultat, un flux de trésorerie ou une TVA exportable." : `Je peux préparer un export avec vos données actuelles: ${metrics.transactionCount} transaction(s), ${formatFCFA(metrics.revenue)} de revenus et ${formatFCFA(metrics.expenses)} de dépenses.`, suggestions: ['Télécharger le rapport mensuel', 'Résumer les rapports', 'Retrouver le rapport TVA'], action: 'report' };
+    if (lower.includes('invoice') || lower.includes('facture') || lower.includes('unpaid')) return { content: "Je n'ai pas trouvé de factures impayées connectées à votre base pour ce compte. Quand le module factures sera alimenté, je pourrai lister les échéances, retards et montants réels sans estimation fictive.", suggestions: ['Voir le risque de trésorerie', 'Exporter les créances', 'Analyser mon activité'], action: 'alert' };
+    if (lower.includes('profit') || lower.includes('bénéf') || lower.includes('benef') || lower.includes('make')) return { content: `Votre profit net calculé depuis vos transactions est de ${formatFCFA(profit)}.\n\nRevenus analysés: ${formatFCFA(totalIncome)}\nDépenses analysées: ${formatFCFA(totalExpense)}\nMarge nette: ${totalIncome ? Math.round((profit / totalIncome) * 100) : 0}%\n\nLecture Mosika: ${metrics.emptyState ? "l'historique est vide, donc je ne peux pas conclure sur la rentabilité." : profit >= 0 ? "la rentabilité est positive sur les données enregistrées." : "les dépenses dépassent les revenus enregistrés."}`, suggestions: ['Analyser mon activité', 'Voir mes dépenses', 'Télécharger le rapport mensuel'], action: 'insight' };
     if (lower.includes('catégoris') || lower.includes('transaction') || lower.includes('today') || lower.includes('summarize')) return { content: dailyTransactions.length === 0 ? 'Aucune transaction récente. Votre historique est vide pour ce compte.' : `Résumé des transactions récentes:\n\n${dailyTransactions.map((t) => `• ${t.description}: ${t.type === 'income' ? '+' : '-'}${formatFCFA(t.amount)} (${t.category})`).join('\n')}\n\nCes lignes viennent de votre historique connecté.`, suggestions: ['Rechercher dans l’historique', 'Voir mes dépenses', 'Expliquer les métriques comptables'], action: 'categorize' };
     if (lower.includes('insight') || lower.includes('conseil') || lower.includes('analyze') || lower.includes('analyse') || lower.includes('business') || lower.includes('activit')) return { content: metrics.emptyState ? `Analyse business Mosika:\n\n• Santé financière: ${healthScore}%\n• Aucune transaction réelle pour le moment.\n• Revenus: ${formatFCFA(0)}\n• Dépenses: ${formatFCFA(0)}\n\nMa recommandation: ajoutez une première transaction et complétez le profil pour activer les tendances.` : `Analyse business Mosika:\n\n• Santé financière: ${healthScore}%\n• Revenus: ${formatFCFA(metrics.revenue)}\n• Dépenses: ${formatFCFA(metrics.expenses)}\n• Profit net: ${formatFCFA(metrics.profit)}\n• Croissance: ${metrics.growthRate.toFixed(1)}%\n\nMa recommandation: ${metrics.profit >= 0 ? 'documentez vos revenus récurrents et gardez les charges sous contrôle.' : 'réduisez les charges prioritaires et sécurisez de nouveaux encaissements.'}`, suggestions: ['Vérifier mon éligibilité', 'Voir le risque de trésorerie', 'Télécharger le rapport mensuel'], action: 'insight' };
-    if (lower.includes('dépens') || lower.includes('depens') || lower.includes('expense')) return { content: `Dépenses analysées: ${formatFCFA(totalExpense)}.\n\nLes postes les plus sensibles sont achats stock, transport et charges fixes. Je conseille de créer une alerte si le transport dépasse 12% des dépenses hebdomadaires ou si deux achats stock se répètent dans la même journée.`, suggestions: ['Créer une alerte dépenses', 'Voir la tendance des dépenses', 'Summarize today’s transactions'], action: 'alert' };
-    if (lower.includes('tva') || lower.includes('déclar') || lower.includes('tax')) return { content: "Rappel fiscal: votre estimation TVA reste à surveiller avant la prochaine déclaration. Les rapports comptables sont structurés pour séparer TVA collectée, déductible et net à payer.\n\nJe peux aussi expliquer chaque métrique ou préparer un résumé pour votre comptable.", suggestions: ['Expliquer la TVA', 'Retrouver les rapports', 'Télécharger le rapport mensuel'], action: 'alert' };
+    if (lower.includes('dépens') || lower.includes('depens') || lower.includes('expense')) return { content: metrics.emptyState ? "Aucune dépense réelle n'est enregistrée pour ce compte." : `Dépenses analysées: ${formatFCFA(totalExpense)}.\n\nRatio dépenses/revenus: ${currentExpenseRatio}%.\nPoste dominant: ${topExpense ? `${topExpense.name} (${Math.round(topExpense.share)}%)` : 'non déterminé'}.\n\nRecommandation: ${currentExpenseRatio > 85 ? 'réduisez les charges variables avant toute demande de financement.' : 'continuez à surveiller les charges récurrentes et les justificatifs.'}`, suggestions: ['Créer une alerte dépenses', 'Voir la tendance des dépenses', 'Summarize today’s transactions'], action: 'alert' };
+    if (lower.includes('tva') || lower.includes('déclar') || lower.includes('tax')) return { content: `TVA estimée depuis les transactions: ${formatFCFA(metrics.taxDue)}.\nTVA collectée: ${formatFCFA(metrics.taxCollected)}.\nTVA déductible: ${formatFCFA(metrics.taxDeductible)}.\n\n${metrics.emptyState ? 'Ajoutez des transactions taxables pour préparer une déclaration exploitable.' : 'Ces montants viennent des mouvements enregistrés et restent à valider avec votre comptable.'}`, suggestions: ['Expliquer la TVA', 'Retrouver les rapports', 'Télécharger le rapport mensuel'], action: 'alert' };
     if (lower.includes('loan') || lower.includes('prêt') || lower.includes('score') || lower.includes('crédit') || lower.includes('eligibility') || lower.includes('éligibil')) {
       const loanReady = !metrics.emptyState && metrics.mosikaScore >= 520 && metrics.scoreConfidence >= 45 && !['high', 'insufficient_data'].includes(metrics.riskAssessmentLevel);
       const strictLimit = loanReady ? Math.round((100000 + Math.pow(Math.max(0, Math.min(1, metrics.mosikaScore / 1000)), 2) * 1900000) / 50000) * 50000 : 0;
@@ -5948,7 +6056,7 @@ function AIAssistant({ isOpen, onClose, transactions, loanRequests, metrics, com
         action: 'insight',
       };
     }
-    return { content: "Je peux chercher dans vos transactions, expliquer vos rapports, résumer la journée, estimer le profit, analyser les dépenses, suivre une demande de prêt ou préparer une recommandation financière. Que souhaitez-vous regarder en premier ?", suggestions: ['Voir mes dépenses', 'Télécharger le rapport mensuel', 'Quel profit ai-je réalisé ?', 'Vérifier mon éligibilité'] };
+    return { content: metrics.emptyState ? "Votre espace financier est encore vide. Je peux vous aider à créer vos premières transactions, comprendre les rapports, préparer le suivi TVA ou expliquer comment construire votre Score Mosika." : `Je peux analyser vos transactions réelles, expliquer vos rapports, résumer la journée, estimer le profit, analyser les dépenses ou suivre une demande de prêt. Revenu dominant actuel: ${topIncome ? topIncome.name : 'non déterminé'}.`, suggestions: ['Voir mes dépenses', 'Télécharger le rapport mensuel', 'Quel profit ai-je réalisé ?', 'Vérifier mon éligibilité'] };
   };
   const handleSend = () => {
     if (!inputValue.trim()) return;
@@ -6920,37 +7028,47 @@ function ConfettiBurst({ trigger }: { trigger: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  screenRoot: { flex: 1, backgroundColor: c.surface50, overflow: 'hidden' },
+  screenRoot: { flex: 1, backgroundColor: c.surface50 },
   header: { height: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, backgroundColor: c.white, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.surface200, shadowColor: c.surface900, shadowOpacity: 0.04, shadowRadius: 10, elevation: 2 },
   headerBack: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   headerTitle: { flex: 1, fontSize: 18 },
   headerActions: { gap: 8, flexShrink: 0 },
   headerUtilityActions: { gap: 8 },
-  bottomNav: { position: 'absolute', left: 12, right: 12, bottom: 8, backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, borderRadius: 26, flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8, shadowColor: c.surface950, shadowOpacity: 0.12, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
-  bottomNavItem: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 5 },
+  bottomNav: { position: 'absolute', left: 10, right: 10, backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, borderRadius: 28, flexDirection: 'row', justifyContent: 'space-between', gap: 2, paddingTop: 9, paddingHorizontal: 6, shadowColor: c.surface950, shadowOpacity: 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 14 },
+  bottomNavItem: { flex: 1, minWidth: 0, minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, paddingVertical: 6, borderRadius: 18 },
+  bottomNavItemActive: { backgroundColor: c.formalio50 },
+  bottomNavAddItem: { transform: [{ translateY: -18 }], minHeight: 52 },
+  bottomNavLabel: { fontSize: 9.5, lineHeight: 12, marginTop: 3, textAlign: 'center' },
   addTab: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', backgroundColor: c.formalio700, shadowColor: c.formalio900, shadowOpacity: 0.24, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 9 },
   card: { backgroundColor: c.white, borderRadius: 18, borderWidth: 1, borderColor: c.surface200, padding: 14, shadowColor: c.surface900, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
   pill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
-  primaryButton: { minHeight: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  primaryButton: { minHeight: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
   authFull: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   decorativeOrb: { position: 'absolute', width: 260, height: 260, borderRadius: 180 },
   softOrb: { position: 'absolute', width: 150, height: 150, borderRadius: 100 },
   authShell: { flex: 1 },
-  welcomeScreen: { minHeight: 680, flex: 1, justifyContent: 'space-between' },
+  welcomeScreen: { flexGrow: 1, justifyContent: 'space-between' },
   welcomeCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   welcomeTitle: { marginTop: 26, textAlign: 'center', fontSize: 24, lineHeight: 30 },
   welcomeCopy: { marginTop: 12, maxWidth: 310, textAlign: 'center', color: c.surface500, fontSize: 14, lineHeight: 21 },
   chipWrap: { marginTop: 22, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
   chipWrapLeft: { marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  welcomeActions: { paddingHorizontal: 24, paddingTop: 14, gap: 12, backgroundColor: c.white, borderTopWidth: 1, borderTopColor: c.surface100, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 18, shadowOffset: { width: 0, height: -8 }, elevation: 8 },
+  authPrimaryButton: { minHeight: 56, shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  authSecondaryButton: { minHeight: 54, borderColor: c.formalio200, backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2 },
   dot: { width: 8, height: 8, borderRadius: 999, backgroundColor: c.surface200 },
   dotActive: { width: 32, backgroundColor: c.formalio700 },
-  formScreen: { flexGrow: 1, padding: 24 },
+  formScreen: { flexGrow: 1, padding: 24, paddingBottom: 32 },
+  formScreenCompact: { paddingTop: 18, paddingBottom: 24 },
+  authFormStack: { marginTop: 24, gap: 15 },
   authBack: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.surface50, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
   authTitle: { fontSize: 24, lineHeight: 31, marginTop: 20 },
   authSubtitle: { color: c.surface500, fontSize: 14, marginTop: 5, lineHeight: 20 },
-  segment: { flexDirection: 'row', gap: 4, backgroundColor: c.surface100, borderRadius: 13, padding: 4 },
-  segmentItem: { flex: 1, borderRadius: 10, minHeight: 36, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 6, position: 'relative', overflow: 'hidden' },
+  segment: { backgroundColor: c.surface100, borderRadius: 14, padding: 4, overflow: 'hidden' },
+  segmentScrollContent: { flexDirection: 'row', gap: 5 },
+  segmentItem: { borderRadius: 11, minHeight: 40, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 9, position: 'relative', overflow: 'hidden' },
+  segmentItemScrollable: { minWidth: 78 },
   segmentSelected: { backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   segmentGlow: { position: 'absolute', left: 10, right: 10, bottom: 4, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
   inputBox: { minHeight: 58, borderRadius: 18, backgroundColor: c.surface50, borderWidth: 2, borderColor: c.surface100, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -6960,8 +7078,13 @@ const styles = StyleSheet.create({
   vDivider: { width: 1, height: 20, backgroundColor: c.surface300 },
   dividerLine: { flex: 1, height: 1, backgroundColor: c.surface200 },
   strengthBar: { flex: 1, height: 6, borderRadius: 6 },
+  biometricLoginCard: { borderRadius: 20, borderWidth: 1, borderColor: c.formalio200, backgroundColor: c.formalio50, padding: 13, gap: 12, shadowColor: c.formalio900, shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
+  biometricLoginIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: c.white, borderWidth: 1, borderColor: c.formalio100 },
+  biometricLoginButton: { minHeight: 46, borderColor: c.formalio200, backgroundColor: c.white },
   biometricCircle: { width: 128, height: 128, borderRadius: 64, backgroundColor: c.formalio50, alignItems: 'center', justifyContent: 'center', marginTop: 60 },
   successScreen: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  welcomeBackCard: { width: '100%', marginTop: 24, padding: 18, borderColor: c.formalio200, shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 14, elevation: 3 },
+  welcomeBackRow: { justifyContent: 'space-between', gap: 12, minHeight: 38, paddingVertical: 6, borderTopWidth: 1, borderTopColor: c.surface100 },
   checkBig: { width: 80, height: 80, borderRadius: 40, backgroundColor: c.formalio100, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   otpBox: { width: 48, height: 58, borderRadius: 17, backgroundColor: c.surface50, borderWidth: 1, borderColor: c.surface200, textAlign: 'center', fontFamily: font.bold, fontSize: 21, color: c.surface900, paddingVertical: 8 },
   bubble: { position: 'absolute', backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, shadowColor: c.surface900, shadowOpacity: 0.08, shadowRadius: 12, elevation: 2 },
@@ -6980,10 +7103,18 @@ const styles = StyleSheet.create({
   balanceCard: { borderRadius: 26, padding: 20, marginBottom: 16, overflow: 'hidden', shadowColor: c.surface900, shadowOpacity: 0.16, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 6 },
   balancePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,.1)', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 9 },
   balanceDetail: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(255,255,255,.1)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 9 },
-  quickAction: { minHeight: 98, backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, borderRadius: 16, paddingHorizontal: 8, paddingVertical: 11, alignItems: 'center', justifyContent: 'center', shadowColor: c.surface900, shadowOpacity: 0.035, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
-  quickIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 7 },
+  dashboardQuickRow: { flexDirection: 'row', alignItems: 'stretch', width: '100%', marginBottom: 2 },
+  dashboardQuickCell: { flex: 1, minWidth: 0 },
+  dashboardQuickCellGap: { marginRight: 6 },
+  quickAction: { minHeight: 106, backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, borderRadius: 18, paddingHorizontal: 8, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', shadowColor: c.surface900, shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  quickActionCompact: { minHeight: 90, borderRadius: 16, paddingHorizontal: 4, paddingVertical: 9 },
+  quickActionUltraCompact: { minHeight: 84, borderRadius: 15, paddingHorizontal: 3, paddingVertical: 8 },
+  quickIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  quickIconCompact: { width: 32, height: 32, borderRadius: 11, marginBottom: 6 },
   quickValue: { fontSize: 15, lineHeight: 18 },
-  quickLabel: { color: c.surface500, fontSize: 10, lineHeight: 13, marginTop: 2 },
+  quickValueCompact: { fontSize: 12, lineHeight: 15, textAlign: 'center' },
+  quickLabel: { color: c.surface500, fontSize: 10, lineHeight: 13, marginTop: 3 },
+  quickLabelCompact: { fontSize: 8.5, lineHeight: 11, textAlign: 'center' },
   actionCard: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: c.white, borderRadius: 18, borderWidth: 1, borderColor: c.surface200, padding: 14, shadowColor: c.surface900, shadowOpacity: 0.035, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
   actionIcon: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   aiAccounting: { borderRadius: 18, padding: 16, marginBottom: 16, overflow: 'hidden', shadowColor: c.surface900, shadowOpacity: 0.12, shadowRadius: 16, elevation: 5 },
@@ -7085,14 +7216,14 @@ const styles = StyleSheet.create({
   taxAlert: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 18, borderWidth: 1, borderColor: c.amber200, backgroundColor: c.amber50, padding: 14, marginBottom: 16 },
   taxButton: { alignSelf: 'flex-start', borderRadius: 9, backgroundColor: c.amber500, paddingHorizontal: 12, paddingVertical: 7, marginTop: 9 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  profileHero: { paddingHorizontal: 16, paddingTop: 30, paddingBottom: 24, minHeight: 150, overflow: 'hidden', justifyContent: 'flex-end' },
+  profileHero: { paddingHorizontal: 18, paddingTop: 54, paddingBottom: 26, minHeight: 178, overflow: 'hidden', justifyContent: 'flex-end' },
   profileTopActions: { position: 'absolute', top: 18, right: 16, zIndex: 3 },
   profileAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,.1)', borderWidth: 2, borderColor: 'rgba(255,255,255,.22)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   profileCheck: { position: 'absolute', right: -2, bottom: -2, width: 24, height: 24, borderRadius: 12, backgroundColor: c.formalio500, borderWidth: 2, borderColor: c.formalio800, alignItems: 'center', justifyContent: 'center' },
   profileCompletionCard: { marginBottom: 12, borderColor: c.formalio200 },
-  profileEditorCard: { marginBottom: 12, padding: 15 },
-  profileMiniButton: { minHeight: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: c.surface100 },
-  profileMiniButtonPrimary: { backgroundColor: c.formalio700 },
+  profileEditorCard: { marginBottom: 12, padding: 16, borderColor: c.surface200, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
+  profileMiniButton: { minHeight: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, backgroundColor: c.surface100, borderWidth: 1, borderColor: c.surface200 },
+  profileMiniButtonPrimary: { backgroundColor: c.formalio700, borderColor: c.formalio700, shadowColor: c.formalio900, shadowOpacity: 0.14, shadowRadius: 10, elevation: 3 },
   avatarSelector: { borderRadius: 16, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.surface50, padding: 12 },
   avatarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   avatarChoice: { width: 78, minHeight: 96, borderRadius: 16, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8 },
@@ -7101,9 +7232,9 @@ const styles = StyleSheet.create({
   coverThemeChoice: { flexGrow: 1, minWidth: 132, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, padding: 9, gap: 7 },
   coverThemeChoiceSelected: { borderColor: c.formalio500, backgroundColor: c.formalio50 },
   coverThemeSwatch: { height: 34, borderRadius: 10 },
-  profileInfoRow: { gap: 10, minHeight: 46, borderTopWidth: 1, borderTopColor: c.surface100 },
-  profileMenu: { backgroundColor: c.white, borderRadius: 18, borderWidth: 1, borderColor: c.surface200, overflow: 'hidden', shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 },
-  profileMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  profileInfoRow: { gap: 10, minHeight: 48, paddingVertical: 5, borderTopWidth: 1, borderTopColor: c.surface100 },
+  profileMenu: { backgroundColor: c.white, borderRadius: 20, borderWidth: 1, borderColor: c.surface200, overflow: 'hidden', shadowColor: c.surface900, shadowOpacity: 0.07, shadowRadius: 14, elevation: 3 },
+  profileMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 58, paddingHorizontal: 18, paddingVertical: 15 },
   logoutButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 16 },
   settingsList: { backgroundColor: c.white, borderRadius: 18, borderWidth: 1, borderColor: c.surface200, overflow: 'hidden', marginBottom: 16 },
   settingsItem: { gap: 12, paddingHorizontal: 16, paddingVertical: 14 },

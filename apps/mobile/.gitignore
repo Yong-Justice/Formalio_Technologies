@@ -4,3 +4,14 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+node_modules/
+.expo/
+dist/
+build/
+coverage/
+.expo-export-check/
+*.log
+.env
+.env.*
+!.env.example
