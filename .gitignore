@@ -11,8 +11,8 @@ dist/
 build/
 coverage/
 .expo-export-check/
-apps/
-supabase/
+/apps/
+/supabase/
 *.log
 .env
 .env.*
