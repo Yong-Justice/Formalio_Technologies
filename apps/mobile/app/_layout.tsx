@@ -10,7 +10,12 @@ import { AppProviders } from '@/providers/AppProviders';
 import { useAuthStore } from '@/features/auth/state/auth.store';
 import { Sentry } from '@/services/observability/sentry';
 
-void SplashScreen.preventAutoHideAsync();
+import { vexo } from 'vexo-analytics';
+
+// Initialize Vexo at the root level, outside of any component
+if (__DEV__ === false) {
+  vexo('b52dba9f-c071-4b87-98d1-5d79891007da');
+}
 
 function RootLayout() {
   const isHydrated = useAuthStore((s) => s.isHydrated);
