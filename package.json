@@ -5,5 +5,8 @@
     "start": "npx expo start",
     "mobile:start": "cd apps/mobile && npx expo start",
     "mobile:typecheck": "cd apps/mobile && npm run typecheck"
+  },
+  "dependencies": {
+    "vexo-analytics": "1.5.6"
   }
 }
