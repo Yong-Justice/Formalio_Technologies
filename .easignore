@@ -1,0 +1,14 @@
+.git
+.git/**
+node_modules
+.expo
+.expo/**
+dist
+build
+coverage
+.expo-export-check
+.expo-export-check/**
+*.log
+.env
+.env.*
+!.env.example
