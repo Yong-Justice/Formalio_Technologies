@@ -438,7 +438,7 @@ function Tap({
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
-        style,
+        StyleSheet.flatten(style),
         disabled && { opacity: 0.55 },
         pressed && !disabled && { opacity: 0.88, transform: [{ scale: 0.98 }] },
       ]}
