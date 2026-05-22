@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, getSupabaseRuntimeConfig } from '@/services/supabase/client';
 import type { Transaction as PrototypeTransaction } from '@/prototype/demoData';
+import type { StockItem } from '@/features/stock/state/stock.store';
 import type { SupportedLanguage } from '@/i18n';
 
 export type CloudKycStatus = 'pending' | 'under-review' | 'approved' | 'rejected';
@@ -102,6 +103,19 @@ type NotificationRow = {
   created_at: string;
 };
 
+type StockItemRow = {
+  id: string;
+  company_id: string;
+  name: string;
+  quantity: number | string;
+  price_type: 'fixed' | 'range';
+  unit_price: number | string | null;
+  min_price: number | string | null;
+  max_price: number | string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type CompanyRow = {
   id: string;
   name: string;
@@ -142,6 +156,7 @@ type BootstrapData = {
   companyId: string;
   profile: CloudBusinessProfile;
   transactions: PrototypeTransaction[];
+  stockItems: StockItem[];
   notifications: { id: string; type: 'success' | 'warning' | 'info'; title: string; message: string; time: string; read: boolean }[];
   loanRequests: CloudLoanRequest[];
   subscription: CloudSubscription;
@@ -356,6 +371,35 @@ function mapTransaction(row: any): PrototypeTransaction {
     amount: Number(row.amount ?? 0),
     method: row.payment_method ?? 'Mobile Money',
     status: row.status ?? 'completed',
+  };
+}
+
+function mapStockItem(row: StockItemRow): StockItem {
+  const priceType = row.price_type === 'range' ? 'range' : 'fixed';
+  return {
+    id: row.id,
+    name: row.name,
+    quantity: toNumber(row.quantity),
+    priceType,
+    unitPrice: priceType === 'fixed' ? toNumber(row.unit_price) : undefined,
+    minPrice: priceType === 'range' ? toNumber(row.min_price) : undefined,
+    maxPrice: priceType === 'range' ? toNumber(row.max_price) : undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function stockItemPayload(companyId: string, item: StockItem) {
+  return {
+    id: item.id,
+    company_id: companyId,
+    name: item.name,
+    quantity: item.quantity,
+    price_type: item.priceType,
+    unit_price: item.priceType === 'fixed' ? item.unitPrice ?? 0 : null,
+    min_price: item.priceType === 'range' ? item.minPrice ?? 0 : null,
+    max_price: item.priceType === 'range' ? item.maxPrice ?? 0 : null,
+    deleted_at: null,
   };
 }
 
@@ -887,7 +931,7 @@ export const formalioBackend = {
     const now = new Date();
     const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const periodEnd = now.toISOString().slice(0, 10);
-    const [transactionsData, notificationsData, loansData, subscriptionData, metricsData] = await Promise.all([
+    const [transactionsData, stockItemsData, notificationsData, loansData, subscriptionData, metricsData] = await Promise.all([
       readOptional<any[]>(
         'transactions',
         supabase
@@ -897,6 +941,16 @@ export const formalioBackend = {
         .is('deleted_at', null)
         .order('occurred_at', { ascending: false })
         .limit(100),
+        [],
+      ),
+      readOptional<StockItemRow[]>(
+        'stock_items',
+        supabase
+        .from('stock_items')
+        .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .order('updated_at', { ascending: false }),
         [],
       ),
       readOptional<any[]>(
@@ -943,6 +997,7 @@ export const formalioBackend = {
       companyId,
       profile: mapProfile(profileRow, company),
       transactions: (transactionsData ?? []).map(mapTransaction),
+      stockItems: (stockItemsData ?? []).map(mapStockItem),
       notifications: (notificationsData ?? []).map((row) => mapNotification(row as NotificationRow)),
       loanRequests: (loansData ?? []).map(mapLoanRequest),
       subscription: mapSubscription(subscriptionData),
@@ -1015,6 +1070,39 @@ export const formalioBackend = {
     return mapTransaction(data);
   },
 
+  async getStockItems(companyId: string) {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase
+      .from('stock_items')
+      .select('*')
+      .eq('company_id', companyId)
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false });
+    if (error) throw describeSupabaseError(error, 'Impossible de synchroniser le stock.', 'stock_items.select');
+    return (data ?? []).map((row) => mapStockItem(row as StockItemRow));
+  },
+
+  async upsertStockItem(companyId: string, item: StockItem) {
+    if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase
+      .from('stock_items')
+      .upsert(stockItemPayload(companyId, item))
+      .select()
+      .single();
+    if (error) throw describeSupabaseError(error, 'Impossible de sauvegarder le stock dans le cloud.', 'stock_items.upsert');
+    return mapStockItem(data as StockItemRow);
+  },
+
+  async deleteStockItem(companyId: string, itemId: string) {
+    if (!isSupabaseConfigured) return;
+    const { error } = await supabase
+      .from('stock_items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('company_id', companyId)
+      .eq('id', itemId);
+    if (error) throw describeSupabaseError(error, 'Impossible de supprimer le stock dans le cloud.', 'stock_items.delete');
+  },
+
   async getFinancialMetrics(companyId: string, periodStart?: string, periodEnd?: string) {
     if (!isSupabaseConfigured) return emptyMetrics();
     const now = new Date();
@@ -1034,6 +1122,7 @@ export const formalioBackend = {
     const channel = supabase
       .channel(`company-live-${companyId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: `company_id=eq.${companyId}` }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_items', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reports', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_requests', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'documents', filter: `company_id=eq.${companyId}` }, onChange)

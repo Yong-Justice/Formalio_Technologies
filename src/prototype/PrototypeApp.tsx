@@ -389,6 +389,10 @@ const mascotImages: Record<MascotState, number> = {
 
 const officialLogo = require('../../assets/images/official-logo.png');
 
+const isAndroidNative = Platform.OS === 'android';
+const defaultTextMaxScale = isAndroidNative ? 1 : 1.08;
+const inputTextMaxScale = isAndroidNative ? 1 : 1.05;
+
 let currentAppLanguage: SupportedLanguage = 'fr';
 const AppLanguageContext = createContext<SupportedLanguage | null>(null);
 
@@ -401,11 +405,17 @@ function Txt({
   style,
   weight = 'regular',
   numberOfLines,
+  maxScale,
+  adjustsFontSizeToFit,
+  minimumFontScale,
 }: {
   children: React.ReactNode;
   style?: StyleProp<TextStyle>;
   weight?: keyof typeof font;
   numberOfLines?: number;
+  maxScale?: number;
+  adjustsFontSizeToFit?: boolean;
+  minimumFontScale?: number;
 }) {
   const language = useAppLanguage();
   const localizedChildren = React.Children.map(children, (child) => (
@@ -415,7 +425,13 @@ function Txt({
   ));
 
   return (
-    <Text maxFontSizeMultiplier={1.08} numberOfLines={numberOfLines} style={[{ fontFamily: font[weight], color: c.surface900, includeFontPadding: true }, style]}>
+    <Text
+      maxFontSizeMultiplier={maxScale ?? defaultTextMaxScale}
+      numberOfLines={numberOfLines}
+      adjustsFontSizeToFit={adjustsFontSizeToFit}
+      minimumFontScale={minimumFontScale}
+      style={[{ fontFamily: font[weight], color: c.surface900, includeFontPadding: !isAndroidNative }, style]}
+    >
       {localizedChildren}
     </Text>
   );
@@ -440,9 +456,10 @@ function Tap({
       accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       onPress={onPress}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         StyleSheet.flatten(style),
-        disabled && { opacity: 0.55 },
+        disabled && { opacity: 0.72 },
         pressed && !disabled && { opacity: 0.88, transform: [{ scale: 0.98 }] },
       ]}
     >
@@ -522,11 +539,17 @@ function PrimaryButton({
     surface: { bg: c.surface100, text: c.surface700, border: c.surface100 },
     outline: { bg: c.white, text: c.surface700, border: c.surface200 },
   }[tone];
+  const effectiveColors = disabled
+    ? { bg: c.surface200, text: c.surface700, border: c.surface300 }
+    : colors;
+  const flattenedStyle = StyleSheet.flatten(style) as ViewStyle | undefined;
+  const radius = typeof flattenedStyle?.borderRadius === 'number' ? flattenedStyle.borderRadius : 18;
   return (
-    <Tap disabled={disabled} onPress={onPress} style={[styles.primaryButton, { backgroundColor: colors.bg, borderColor: colors.border }, style]}>
-      <Row style={{ justifyContent: 'center', gap: 8 }}>
-        {icon ? <Icon icon={icon} size={17} color={colors.text} /> : null}
-        <Txt weight="bold" numberOfLines={1} style={{ color: colors.text, fontSize: 14, flexShrink: 1, textAlign: 'center' }}>
+    <Tap disabled={disabled} onPress={onPress} style={[styles.primaryButton, { backgroundColor: effectiveColors.bg, borderColor: effectiveColors.border }, disabled && styles.primaryButtonDisabled, style]}>
+      <View pointerEvents="none" style={[styles.primaryButtonFill, { borderRadius: radius, backgroundColor: effectiveColors.bg, borderColor: effectiveColors.border }, disabled && styles.primaryButtonFillDisabled]} />
+      <Row style={styles.primaryButtonContent}>
+        {icon ? <Icon icon={icon} size={17} color={effectiveColors.text} /> : null}
+        <Txt weight="bold" numberOfLines={1} style={{ color: effectiveColors.text, fontSize: 14, flexShrink: 1, textAlign: 'center' }}>
           {label}
         </Txt>
       </Row>
@@ -856,30 +879,36 @@ function DonutChart({ data, size = 128 }: { data: { name: string; value: number;
 }
 
 function Segment<T extends string>({ value, options, onChange, style }: { value: T; options: { key: T; label: string; icon?: LucideIcon }[]; onChange: (v: T) => void; style?: StyleProp<ViewStyle> }) {
-  const compact = options.length >= 5;
+  const compact = options.length >= 4;
+  const androidCompact = isAndroidNative && compact;
   return (
     <View style={[styles.segment, style]}>
-      <View style={styles.segmentTrack}>
-        {options.map((option) => {
-          const selected = value === option.key;
-          return (
-            <Tap
-              key={option.key}
-              onPress={() => onChange(option.key)}
-              style={[
-                styles.segmentItem,
-                compact && styles.segmentItemCompact,
-                selected && styles.segmentSelected,
-              ]}
-            >
-              {option.icon ? <Icon icon={option.icon} size={compact ? 12 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
-              <Txt weight="bold" numberOfLines={1} style={[styles.segmentLabel, compact && styles.segmentLabelCompact, { color: selected ? c.formalio700 : c.surface500 }]}>
-                {option.label}
+      <View style={[styles.segmentTrack, styles.segmentTrackFill, androidCompact && styles.segmentTrackCompact]}>
+      {options.map((option) => {
+        const selected = value === option.key;
+        const label = androidCompact && option.label === 'Add Stock' ? 'Stock' : option.label;
+        return (
+          <Tap
+            key={option.key}
+            onPress={() => onChange(option.key)}
+            style={styles.segmentTap}
+          >
+            <View style={[styles.segmentItem, compact && styles.segmentItemCompact, androidCompact && styles.segmentItemAndroidCompact, selected && styles.segmentSelected]}>
+              {option.icon && !androidCompact ? <Icon icon={option.icon} size={compact ? 13 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
+              <Txt
+                weight="bold"
+                numberOfLines={1}
+                adjustsFontSizeToFit={androidCompact}
+                minimumFontScale={0.78}
+                style={[styles.segmentLabel, compact && styles.segmentLabelCompact, androidCompact && styles.segmentLabelAndroidCompact, { color: selected ? c.formalio700 : c.surface500 }]}
+              >
+                {label}
               </Txt>
-              {selected ? <Animated.View entering={FadeIn.duration(140)} style={styles.segmentGlow} /> : null}
-            </Tap>
-          );
-        })}
+              {selected ? <Animated.View entering={FadeIn.duration(140)} style={[styles.segmentGlow, androidCompact && styles.segmentGlowCompact]} /> : null}
+            </View>
+          </Tap>
+        );
+      })}
       </View>
     </View>
   );
@@ -929,7 +958,7 @@ function Field({
           editable={editable}
           placeholder={placeholder ? localizeRuntimeText(language, placeholder) : undefined}
           placeholderTextColor={c.surface400}
-          maxFontSizeMultiplier={1.05}
+          maxFontSizeMultiplier={inputTextMaxScale}
           selectionColor={c.formalio500}
           secureTextEntry={secureTextEntry}
           keyboardType={keyboardType}
@@ -1002,7 +1031,7 @@ function ScreenWrapper({
       scrollY.value = event.contentOffset.y;
     },
   });
-  const bottomPadding = showNav ? 128 : Math.max(24, insets.bottom + 16);
+  const bottomPadding = showNav ? (isAndroidNative ? 280 : 142) : Math.max(24, insets.bottom + 16);
   const wrapperMaxWidth = Math.min(width, 430);
   const navBottomOffset = Math.max(8, Math.min(18, insets.bottom || 10));
   const bottomTabs = [
@@ -1486,7 +1515,7 @@ function AuthFlows({
             <View style={styles.inputBox}>
               <Txt weight="medium" style={{ fontSize: 13, color: c.surface700 }}>🇨🇲 +237</Txt>
               <View style={styles.vDivider} />
-              <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} style={styles.textInput} />
+              <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} maxFontSizeMultiplier={inputTextMaxScale} style={styles.textInput} />
             </View>
             {errors.phone ? <ErrorLine text={errors.phone} /> : null}
           </View>
@@ -1771,7 +1800,7 @@ function AuthFlows({
           <View style={styles.inputBox}>
             <Txt weight="medium" style={{ fontSize: 13, color: c.surface700 }}>CM +237</Txt>
             <View style={styles.vDivider} />
-            <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} style={styles.textInput} />
+            <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} maxFontSizeMultiplier={inputTextMaxScale} style={styles.textInput} />
           </View>
           {errors.phone ? <ErrorLine text={errors.phone} /> : null}
           <PrimaryButton
@@ -1812,7 +1841,7 @@ function AuthFlows({
           <View style={styles.inputBox}>
             <Txt weight="medium" style={{ fontSize: 13, color: c.surface700 }}>🇨🇲 +237</Txt>
             <View style={styles.vDivider} />
-            <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} style={styles.textInput} />
+            <TextInput value={phone} onChangeText={(v) => setPhone(formatPhone(v))} keyboardType="phone-pad" placeholder="6XX XXX XXX" placeholderTextColor={c.surface400} maxFontSizeMultiplier={inputTextMaxScale} style={styles.textInput} />
           </View>
           <PrimaryButton label={loading ? 'Envoi...' : 'Recevoir le code'} icon={ChevronRight} disabled={loading} onPress={() => simulateLoading('otp', 1000)} />
         </View>
@@ -1963,6 +1992,7 @@ function OtpBoxes({ otp, setOtp }: { otp: string[]; setOtp: (v: string[]) => voi
             if (text && i < otp.length - 1) refs.current[i + 1]?.focus();
           }}
           keyboardType="numeric"
+          maxFontSizeMultiplier={inputTextMaxScale}
           maxLength={1}
           style={styles.otpBox}
         />
@@ -2263,6 +2293,7 @@ function StatusfulPrototype() {
   const cloudErrorToastShownRef = useRef(false);
   const cloudRetryCountRef = useRef(0);
   const hydrateStock = useStockStore((state) => state.hydrate);
+  const replaceStockItems = useStockStore((state) => state.replaceItems);
 
   const showNav = !['auth', 'business-setup'].includes(screen);
   const navigate = useCallback((next: Screen) => {
@@ -2331,6 +2362,7 @@ function StatusfulPrototype() {
       setCloudCompanyId(data.companyId);
       setProfile(data.profile as BusinessProfile);
       setTransactions(data.transactions);
+      replaceStockItems(data.stockItems ?? []);
       setFinancialMetrics(data.metrics ?? emptyFinancialMetrics);
       setSubscription(data.subscription ?? defaultSubscription);
       setNotifications(data.notifications);
@@ -2362,7 +2394,7 @@ function StatusfulPrototype() {
     } finally {
       setCloudLoading(false);
     }
-  }, [isOnline, showToast]);
+  }, [isOnline, replaceStockItems, showToast]);
 
   const applyTransactionSnapshot = useCallback((nextTransactions: Transaction[]) => {
     setTransactions(nextTransactions);
@@ -2576,8 +2608,8 @@ function StatusfulPrototype() {
       ) : null}
       {screen === 'transactions' ? <TransactionsScreen shellProps={shellProps} transactions={transactions} /> : null}
       {screen === 'add-transaction' ? <AddTransactionScreen shellProps={shellProps} cloudCompanyId={cloudCompanyId} transactions={transactions} setTransactions={applyTransactionSnapshot} navigate={navigate} openVoice={() => setVoiceRecorderOpen(true)} openScanner={() => setScannerOpen(true)} setShowConfetti={setShowConfetti} scannedDraft={pendingScan} onScanConsumed={handleScanDraftConsumed} /> : null}
-      {screen === 'stock' ? <StockManagerScreen shellProps={shellProps} /> : null}
-      {screen === 'cashflow' ? <CashflowScreen shellProps={shellProps} metrics={financialMetrics} /> : null}
+      {screen === 'stock' ? <StockManagerScreen shellProps={shellProps} cloudCompanyId={cloudCompanyId} /> : null}
+      {screen === 'cashflow' ? <CashflowScreen shellProps={shellProps} metrics={financialMetrics} cloudCompanyId={cloudCompanyId} /> : null}
       {screen === 'credit-score' ? <CreditScoreScreen shellProps={shellProps} metrics={financialMetrics} onLoanSubmitted={handleLoanSubmitted} /> : null}
       {screen === 'reports' ? <ReportsScreen shellProps={shellProps} openDownload={openDownload} loanRequests={loanRequests} metrics={financialMetrics} transactions={transactions} /> : null}
       {screen === 'mobile-money' ? <MobileMoneyScreen shellProps={shellProps} /> : null}
@@ -2594,6 +2626,7 @@ function StatusfulPrototype() {
             void formalioBackend.signOut();
             setCloudCompanyId(null);
             setTransactions([]);
+            replaceStockItems([]);
             setNotifications([]);
             setLoanRequests([]);
             setFinancialMetrics(emptyFinancialMetrics);
@@ -3045,6 +3078,7 @@ function TransactionsScreen({ shellProps, transactions }: { shellProps: ShellPro
             placeholderTextColor={c.surface400}
             returnKeyType="search"
             autoCapitalize="none"
+            maxFontSizeMultiplier={inputTextMaxScale}
             style={styles.textInput}
           />
           {searchQuery ? (
@@ -3128,7 +3162,7 @@ function StockValueCard({ items, onPress }: { items: StockItem[]; onPress: () =>
             <View style={[styles.metricIcon, { backgroundColor: c.info50 }]}><Icon icon={Package} size={16} color={c.info700} /></View>
             <Txt weight="black" style={{ color: c.surface800, fontSize: 14 }}>Valeur Totale du Stock</Txt>
           </Row>
-          <Txt weight="black" style={{ color: c.formalio800, fontSize: 26 }}>{formatFCFA(total)}</Txt>
+          <Txt weight="black" numberOfLines={1} style={{ color: c.formalio800, fontSize: isAndroidNative ? 22 : 26, lineHeight: isAndroidNative ? 28 : 33 }}>{formatFCFA(total)}</Txt>
           <Txt style={{ color: c.surface500, fontSize: 12, marginTop: 3 }}>≈ {formatStockCompactValue(total)}</Txt>
         </View>
       </Row>
@@ -3140,15 +3174,15 @@ function StockValueCard({ items, onPress }: { items: StockItem[]; onPress: () =>
   );
 }
 
-function StockManagerScreen({ shellProps }: { shellProps: ShellProps }) {
+function StockManagerScreen({ shellProps, cloudCompanyId }: { shellProps: ShellProps; cloudCompanyId: string | null }) {
   return (
     <ScreenWrapper {...shellProps} title="Gestionnaire de Stock">
-      <StockManagerPanel />
+      <StockManagerPanel cloudCompanyId={cloudCompanyId} />
     </ScreenWrapper>
   );
 }
 
-function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
+function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedded?: boolean; cloudCompanyId?: string | null }) {
   const { showToast } = useToast();
   const items = useStockStore((state) => state.items);
   const upsertItem = useStockStore((state) => state.upsertItem);
@@ -3226,7 +3260,7 @@ function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
     const validation = validateForm();
     if (!validation.ok) return;
 
-    upsertItem({
+    const saved = upsertItem({
       id: editingItem?.id,
       name: itemName,
       quantity: validation.parsedQuantity,
@@ -3235,12 +3269,22 @@ function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
       minPrice: validation.parsedMinPrice,
       maxPrice: validation.parsedMaxPrice,
     });
+    if (cloudCompanyId) {
+      void formalioBackend.upsertStockItem(cloudCompanyId, saved).catch((error) => {
+        showToast({ type: 'error', title: 'Sync cloud stock', message: error instanceof Error ? error.message : 'Stock gardé localement.' });
+      });
+    }
     showToast({ type: 'success', title: editingItem ? 'Stock modifié' : 'Article ajouté', message: 'Gestionnaire de stock mis à jour.' });
     closeForm();
   };
 
   const removeItem = (item: StockItem) => {
     deleteItem(item.id);
+    if (cloudCompanyId) {
+      void formalioBackend.deleteStockItem(cloudCompanyId, item.id).catch((error) => {
+        showToast({ type: 'error', title: 'Sync cloud stock', message: error instanceof Error ? error.message : 'Suppression gardée localement.' });
+      });
+    }
     showToast({ type: 'info', title: 'Article supprimé', message: 'Les anciennes transactions restent conservées.' });
   };
 
@@ -3253,9 +3297,9 @@ function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
               <View style={[styles.metricIcon, { backgroundColor: c.formalio50 }]}><Icon icon={Package} size={16} color={c.formalio700} /></View>
               <Txt weight="black" style={{ fontSize: 15 }}>Gestionnaire de Stock</Txt>
             </Row>
-            <Txt style={{ color: c.surface500, fontSize: 12 }}>{items.length} article{items.length > 1 ? 's' : ''} · {formatFCFA(totalValue)}</Txt>
+            <Txt style={{ color: c.surface500, fontSize: 12 }}>{items.length} article{items.length > 1 ? 's' : ''} · {isAndroidNative ? formatStockCompactValue(totalValue) : formatFCFA(totalValue)}</Txt>
           </View>
-          <PrimaryButton label="+ Add Item" icon={Plus} onPress={openCreateForm} style={styles.stockAddButton} />
+          <PrimaryButton label="Ajouter" icon={Plus} onPress={openCreateForm} style={styles.stockAddButton} />
         </Row>
       </Card>
 
@@ -3267,6 +3311,7 @@ function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
           placeholder="Rechercher un article..."
           placeholderTextColor={c.surface400}
           autoCapitalize="none"
+          maxFontSizeMultiplier={inputTextMaxScale}
           style={styles.textInput}
         />
         {searchQuery ? (
@@ -3315,18 +3360,18 @@ function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
                     </Tap>
                   </Row>
                 </Row>
-                <Grid columns={3} gap={8}>
+                <Grid columns={isAndroidNative ? 2 : 3} gap={8}>
                   <View style={styles.stockMetaCell}>
-                    <Txt style={styles.stockMetaLabel}>Prix unitaire</Txt>
+                    <Txt style={styles.stockMetaLabel}>Prix</Txt>
                     <Txt weight="black" numberOfLines={1} style={styles.stockMetaValue}>{formatStockPrice(item)}</Txt>
                   </View>
                   <View style={styles.stockMetaCell}>
-                    <Txt style={styles.stockMetaLabel}>Quantité</Txt>
+                    <Txt style={styles.stockMetaLabel}>Qté</Txt>
                     <Txt weight="black" style={styles.stockMetaValue}>{item.quantity}</Txt>
                   </View>
                   <View style={styles.stockMetaCell}>
-                    <Txt style={styles.stockMetaLabel}>Valeur estimée</Txt>
-                    <Txt weight="black" numberOfLines={1} style={styles.stockMetaValue}>{formatFCFA(getStockItemValue(item))}</Txt>
+                    <Txt style={styles.stockMetaLabel}>Valeur</Txt>
+                    <Txt weight="black" numberOfLines={1} style={styles.stockMetaValue}>{isAndroidNative ? formatStockCompactValue(getStockItemValue(item)) : formatFCFA(getStockItemValue(item))}</Txt>
                   </View>
                 </Grid>
               </Card>
@@ -3527,6 +3572,11 @@ function AddTransactionScreen({
         setStockError(result.error ?? 'Impossible de mettre à jour le stock.');
         return showToast({ type: 'error', title: 'Stock non mis à jour', message: result.error ?? 'Vérifiez la quantité disponible.' });
       }
+      if (cloudCompanyId && result.item) {
+        void formalioBackend.upsertStockItem(cloudCompanyId, result.item).catch((error) => {
+          showToast({ type: 'error', title: 'Sync cloud stock', message: error instanceof Error ? error.message : 'Stock mis à jour localement.' });
+        });
+      }
     }
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 2500);
@@ -3540,7 +3590,7 @@ function AddTransactionScreen({
         {!isExpense && stockItems.length > 0 ? (
           <View>
             <Txt weight="medium" style={styles.fieldLabel}>Revenue Source</Txt>
-            <Segment value={revenueSource} onChange={setRevenueSource} options={[{ key: 'stock', label: 'From Stock Item', icon: Package }, { key: 'other', label: 'Other / Service', icon: Receipt }]} />
+            <Segment value={revenueSource} onChange={setRevenueSource} options={[{ key: 'stock', label: 'Stock', icon: Package }, { key: 'other', label: 'Service', icon: Receipt }]} />
           </View>
         ) : null}
         <View style={[styles.transactionPreview, { borderColor: isExpense ? c.danger200 : c.formalio200, backgroundColor: flowSoft }]}>
@@ -3581,7 +3631,7 @@ function AddTransactionScreen({
         {stockSaleActive ? (
           <>
             <View style={styles.stockSalePanel}>
-              <Txt weight="medium" style={styles.fieldLabel}>Select Stock Item</Txt>
+              <Txt weight="medium" style={styles.fieldLabel}>Article vendu</Txt>
               <View style={styles.inputBox}>
                 <Icon icon={Search} size={16} color={c.surface400} />
                 <TextInput
@@ -3590,6 +3640,7 @@ function AddTransactionScreen({
                   placeholder="Sélectionner un article..."
                   placeholderTextColor={c.surface400}
                   autoCapitalize="none"
+                  maxFontSizeMultiplier={inputTextMaxScale}
                   style={styles.textInput}
                 />
               </View>
@@ -3607,7 +3658,7 @@ function AddTransactionScreen({
                       <Row style={{ justifyContent: 'space-between', gap: 10 }}>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Txt weight="bold" numberOfLines={1} style={{ color: outOfStock ? c.surface400 : c.surface800, fontSize: 12 }}>{item.name}</Txt>
-                          <Txt style={{ color: outOfStock ? c.surface400 : c.surface500, fontSize: 11, marginTop: 2 }}>Stock: {item.quantity} units</Txt>
+                          <Txt style={{ color: outOfStock ? c.surface400 : c.surface500, fontSize: 11, marginTop: 2 }}>Stock: {item.quantity} unités</Txt>
                         </View>
                         <Pill tone={outOfStock ? 'surface' : selected ? 'green' : 'blue'}>{outOfStock ? 'Rupture de stock' : formatStockPrice(item)}</Pill>
                       </Row>
@@ -3701,7 +3752,7 @@ function AddTransactionScreen({
   );
 }
 
-function CashflowScreen({ shellProps, metrics }: { shellProps: ShellProps; metrics: CloudFinancialMetrics }) {
+function CashflowScreen({ shellProps, metrics, cloudCompanyId }: { shellProps: ShellProps; metrics: CloudFinancialMetrics; cloudCompanyId: string | null }) {
   const [filterMode, setFilterMode] = useState<'all' | 'income' | 'expense' | 'stock'>('all');
   const stockItems = useStockStore((state) => state.items);
   const emptySeries = Array.from({ length: 7 }, (_, index) => {
@@ -3731,7 +3782,7 @@ function CashflowScreen({ shellProps, metrics }: { shellProps: ShellProps; metri
         </LinearGradient>
         <Segment value={filterMode} onChange={setFilterMode} options={[{ key: 'all', label: 'Global', icon: BarChart3 }, { key: 'income', label: 'Revenue', icon: TrendingUp }, { key: 'expense', label: 'Dépense', icon: Receipt }, { key: 'stock', label: 'Add Stock', icon: Package }]} />
         {filterMode === 'stock' ? (
-          <StockManagerPanel embedded />
+          <StockManagerPanel embedded cloudCompanyId={cloudCompanyId} />
         ) : (
           <>
         <Grid columns={2} gap={8}>
@@ -4570,15 +4621,19 @@ function ReportsScreen({ shellProps, openDownload, loanRequests, metrics, transa
           { title: 'Flux de Trésorerie', type: 'tresorerie' as const, date: hasFinancialData ? 'Période courante' : 'Aucune donnée', status: hasFinancialData ? 'ready' : 'empty', icon: Wallet, tone: 'green', desc: 'Cash opérationnel et variation nette' },
           { title: 'Déclaration TVA', type: 'tva' as const, date: hasFinancialData ? 'Période courante' : 'Aucune donnée', status: hasFinancialData ? 'ready' : 'empty', icon: Receipt, tone: 'amber', desc: 'TVA collectée, déductible et solde' },
         ].map((report) => (
-          <Tap key={report.title} onPress={() => setSelectedReport(report.type)} style={styles.reportRow}>
+          <Tap key={report.title} onPress={() => setSelectedReport(report.type)} style={styles.reportTap}>
+            <View style={styles.reportRow}>
             <ToneIcon icon={report.icon} tone={report.tone as any} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Txt weight="medium" style={{ fontSize: 13 }}>{report.title}</Txt>
+            <View style={styles.reportRowBody}>
+              <Txt weight="medium" numberOfLines={1} style={{ fontSize: 13 }}>{report.title}</Txt>
               <Txt numberOfLines={1} style={{ color: c.surface500, fontSize: 11, marginTop: 2 }}>{report.desc}</Txt>
               <Txt style={{ color: c.surface400, fontSize: 10, marginTop: 4 }}>{report.date}</Txt>
             </View>
-            {report.status === 'ready' ? <Pill style={styles.reportBadge}>Prêt</Pill> : <Pill tone="gold" style={styles.reportBadge}>Vide</Pill>}
-            <Icon icon={ChevronRight} size={16} color={c.surface400} />
+            <Row style={styles.reportRowAction}>
+              {report.status === 'ready' ? <Pill style={styles.reportBadge}>Prêt</Pill> : <Pill tone="gold" style={styles.reportBadge}>Vide</Pill>}
+              <Icon icon={ChevronRight} size={16} color={c.surface400} />
+            </Row>
+            </View>
           </Tap>
         ))}
       </View>
@@ -5381,13 +5436,15 @@ function ProfileScreen({
             { icon: Gift, label: 'Parrainage', badge: '+1K', action: () => navigate('referral') },
             { icon: HelpCircle, label: 'Aide & Support', action: () => navigate('help') },
           ].map((item, i) => (
-            <Tap key={item.label} onPress={item.action} style={[styles.profileMenuItem, i > 0 && { borderTopWidth: 1, borderTopColor: c.surface100 }]}>
-              <View style={styles.profileMenuIcon}>
-                <Icon icon={item.icon} size={18} color={c.surface500} />
+            <Tap key={item.label} onPress={item.action} style={styles.profileMenuTap}>
+              <View style={[styles.profileMenuItem, i > 0 && { borderTopWidth: 1, borderTopColor: c.surface100 }]}>
+                <View style={styles.profileMenuIcon}>
+                  <Icon icon={item.icon} size={18} color={c.surface500} />
+                </View>
+                <Txt numberOfLines={1} style={styles.profileMenuLabel}>{item.label}</Txt>
+                {item.badge ? <Pill style={styles.profileMenuBadge}>{item.badge}</Pill> : null}
+                <Icon icon={ChevronRight} size={16} color={c.surface400} />
               </View>
-              <Txt numberOfLines={1} style={styles.profileMenuLabel}>{item.label}</Txt>
-              {item.badge ? <Pill style={styles.profileMenuBadge}>{item.badge}</Pill> : null}
-              <Icon icon={ChevronRight} size={16} color={c.surface400} />
             </Tap>
           ))}
         </View>
@@ -5473,8 +5530,8 @@ function ProfileInfoRow({ icon, label, value }: { icon: LucideIcon; label: strin
   return (
     <Row style={styles.profileInfoRow}>
       <View style={[styles.metricIcon, { backgroundColor: c.surface50 }]}><Icon icon={icon} size={15} color={c.surface500} /></View>
-      <Txt style={{ color: c.surface500, fontSize: 11, width: 76 }}>{label}</Txt>
-      <Txt weight="semibold" numberOfLines={1} style={{ color: c.surface800, fontSize: 12, flex: 1 }}>{value}</Txt>
+      <Txt numberOfLines={2} style={{ color: c.surface500, fontSize: 11, lineHeight: 15, width: isAndroidNative ? 92 : 76 }}>{label}</Txt>
+      <Txt weight="semibold" numberOfLines={1} style={{ color: c.surface800, fontSize: 12, flex: 1, minWidth: 0 }}>{value}</Txt>
     </Row>
   );
 }
@@ -5584,7 +5641,7 @@ function EmailVerificationCard({ profile, setProfile, compact }: { profile: Busi
       {!verified ? (
         <Animated.View entering={FadeIn.duration(180)} style={{ marginTop: 12, gap: 10 }}>
           <Field label="Email code" value={token} onChangeText={(value) => setToken(value.replace(/\D/g, '').slice(0, 8))} placeholder="8-digit code" icon={Shield} keyboardType="numeric" />
-          <Grid columns={2} gap={10}>
+          <Grid columns={isAndroidNative ? 1 : 2} gap={10}>
             <PrimaryButton label={verifying ? 'Checking...' : 'Verify code'} icon={verifying ? RefreshCw : Check} disabled={verifying} onPress={verifyToken} style={{ minHeight: 42, borderRadius: 13 }} />
             <PrimaryButton
               label={sending ? 'Envoi...' : secondsRemaining > 0 ? `Réessayer ${secondsRemaining}s` : 'Envoyer l’email'}
@@ -6685,7 +6742,7 @@ function AIAssistant({ isOpen, onClose, transactions, loanRequests, metrics, com
             <Icon icon={voiceMode === 'recording' ? Square : Mic} size={18} color={voiceMode === 'recording' ? c.white : c.formalio700} />
           </Tap>
           <View style={styles.assistantInput}>
-            <TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('ai.placeholder')} placeholderTextColor={c.surface400} style={styles.textInput} onSubmitEditing={handleSend} />
+            <TextInput value={inputValue} onChangeText={setInputValue} placeholder={t('ai.placeholder')} placeholderTextColor={c.surface400} maxFontSizeMultiplier={inputTextMaxScale} style={styles.textInput} onSubmitEditing={handleSend} />
           </View>
           <Tap onPress={handleSend} disabled={!inputValue.trim()} style={styles.sendButton}>
             <Icon icon={Send} size={17} color={c.white} />
@@ -7509,7 +7566,11 @@ const styles = StyleSheet.create({
   card: { backgroundColor: c.white, borderRadius: 18, borderWidth: 1, borderColor: c.surface200, padding: 14, shadowColor: c.surface900, shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
   pill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
-  primaryButton: { minHeight: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
+  primaryButton: { minHeight: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, paddingHorizontal: 14, overflow: 'hidden', position: 'relative', shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
+  primaryButtonFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderWidth: 1 },
+  primaryButtonFillDisabled: { opacity: 1 },
+  primaryButtonContent: { justifyContent: 'center', gap: 8, minWidth: 0, zIndex: 1, paddingVertical: 6 },
+  primaryButtonDisabled: { shadowOpacity: 0, elevation: 0 },
   authFull: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   decorativeOrb: { position: 'absolute', width: 260, height: 260, borderRadius: 180 },
   softOrb: { position: 'absolute', width: 150, height: 150, borderRadius: 100 },
@@ -7521,8 +7582,8 @@ const styles = StyleSheet.create({
   chipWrap: { marginTop: 22, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
   chipWrapLeft: { marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   welcomeActions: { paddingHorizontal: 24, paddingTop: 14, gap: 12, backgroundColor: c.white, borderTopWidth: 1, borderTopColor: c.surface100, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 18, shadowOffset: { width: 0, height: -8 }, elevation: 8 },
-  authPrimaryButton: { minHeight: 56, shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
-  authSecondaryButton: { minHeight: 54, borderColor: c.formalio200, backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2 },
+  authPrimaryButton: { width: '100%', minHeight: 56, shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  authSecondaryButton: { width: '100%', minHeight: 54, borderColor: c.formalio200, backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2 },
   dot: { width: 8, height: 8, borderRadius: 999, backgroundColor: c.surface200 },
   dotActive: { width: 32, backgroundColor: c.formalio700 },
   formScreen: { flexGrow: 1, padding: 24, paddingBottom: 32 },
@@ -7531,20 +7592,26 @@ const styles = StyleSheet.create({
   authBack: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.surface50, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
   authTitle: { fontSize: 24, lineHeight: 31, marginTop: 20 },
   authSubtitle: { color: c.surface500, fontSize: 14, marginTop: 5, lineHeight: 20 },
-  segment: { width: '100%', backgroundColor: c.surface100, borderRadius: 14, padding: 4, overflow: 'hidden' },
-  segmentTrack: { width: '100%', flexDirection: 'row', alignItems: 'stretch', gap: 5 },
+  segment: { width: '100%', backgroundColor: c.surface100, borderRadius: 14, borderWidth: 1, borderColor: c.surface100, padding: 5, overflow: 'hidden' },
+  segmentTrack: { flexDirection: 'row', alignItems: 'stretch', gap: 5 },
+  segmentTrackFill: { width: '100%' },
+  segmentTrackCompact: { gap: 3 },
   segmentScrollContent: { flexDirection: 'row', gap: 5 },
-  segmentItem: { flex: 1, minWidth: 0, borderRadius: 11, minHeight: 40, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 7, position: 'relative', overflow: 'hidden' },
-  segmentItemCompact: { gap: 3, paddingHorizontal: 3 },
-  segmentItemScrollable: { minWidth: 78 },
-  segmentLabel: { fontSize: 11, lineHeight: 14, textAlign: 'center', flexShrink: 1 },
-  segmentLabelCompact: { fontSize: 9.5, lineHeight: 12 },
+  segmentTap: { flex: 1, minWidth: 0 },
+  segmentTapScrollable: { flex: 0, minWidth: 104 },
+  segmentItem: { width: '100%', borderRadius: 11, minHeight: 44, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 8, position: 'relative', overflow: 'hidden' },
+  segmentItemCompact: { gap: 4, paddingHorizontal: 6 },
+  segmentItemAndroidCompact: { minHeight: 42, gap: 0, paddingHorizontal: 3 },
+  segmentLabel: { fontSize: 10.5, lineHeight: 14, textAlign: 'center', flexShrink: 1 },
+  segmentLabelCompact: { fontSize: 10, lineHeight: 13 },
+  segmentLabelAndroidCompact: { width: '100%', fontSize: 9.2, lineHeight: 11.5, letterSpacing: 0 },
   segmentSelected: { backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  segmentGlow: { position: 'absolute', left: 10, right: 10, bottom: 4, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
+  segmentGlow: { position: 'absolute', left: 12, right: 12, bottom: 0, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
+  segmentGlowCompact: { left: 8, right: 8 },
   inputBox: { minHeight: 58, borderRadius: 18, backgroundColor: c.surface50, borderWidth: 2, borderColor: c.surface100, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 9 },
   inputBoxFocused: { borderColor: c.formalio300, backgroundColor: c.white, shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   calculatedInputBox: { borderColor: c.info100, backgroundColor: c.info50 },
-  textInput: { flex: 1, minHeight: 30, color: c.surface900, fontFamily: font.medium, fontSize: 15, lineHeight: 21, paddingVertical: 2, paddingHorizontal: 0 },
+  textInput: { flex: 1, minHeight: 30, color: c.surface900, fontFamily: font.medium, fontSize: 15, lineHeight: 21, paddingVertical: 2, paddingHorizontal: 0, includeFontPadding: false },
   fieldLabel: { color: c.surface700, fontSize: 12, marginBottom: 6 },
   vDivider: { width: 1, height: 20, backgroundColor: c.surface300 },
   dividerLine: { flex: 1, height: 1, backgroundColor: c.surface200 },
@@ -7593,12 +7660,12 @@ const styles = StyleSheet.create({
   newBadge: { backgroundColor: c.gold500, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
   mosikaTip: { flexDirection: 'row', gap: 12, borderRadius: 18, borderWidth: 1, borderColor: c.formalio200, backgroundColor: c.formalio50, padding: 14 },
   transactionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 10, paddingHorizontal: 8 },
-  transactionIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  transactionIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   stockValueCard: { borderColor: c.info100, backgroundColor: c.info50, padding: 16 },
   stockValueLink: { alignSelf: 'flex-start', marginTop: 12, minHeight: 36, borderRadius: 999, backgroundColor: c.white, borderWidth: 1, borderColor: c.info100, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
   stockHeaderCard: { borderColor: c.formalio100, backgroundColor: c.white, padding: 15 },
   stockEmbeddedHeader: { borderColor: c.formalio100, backgroundColor: c.formalio50, padding: 15 },
-  stockAddButton: { minHeight: 42, borderRadius: 14, paddingHorizontal: 12, flexShrink: 0 },
+  stockAddButton: { minHeight: 42, minWidth: 104, borderRadius: 14, paddingHorizontal: 12, flexShrink: 0 },
   stockEmptyState: { alignItems: 'center', borderRadius: 18, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, paddingHorizontal: 22, paddingVertical: 34 },
   stockEmptyButton: { marginTop: 14, minHeight: 40, borderRadius: 13, backgroundColor: c.formalio700, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
   stockItemCard: { gap: 12, padding: 12 },
@@ -7638,7 +7705,7 @@ const styles = StyleSheet.create({
   ocrAutofillCard: { borderRadius: 18, borderWidth: 1, borderColor: c.info200, backgroundColor: c.info50, padding: 13 },
   ocrAutofillCell: { borderRadius: 12, borderWidth: 1, borderColor: c.info100, backgroundColor: c.white, padding: 10 },
   ocrRetryButton: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: c.white, borderWidth: 1, borderColor: c.surface200, paddingHorizontal: 10, paddingVertical: 7 },
-  addTransactionActions: { gap: 10, marginTop: 2, paddingBottom: 4 },
+  addTransactionActions: { gap: 12, marginTop: 8, paddingBottom: 36 },
   formActionButton: { minHeight: 52, borderRadius: 16 },
   choiceCard: { minWidth: 0, minHeight: 74, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 6, shadowColor: c.surface900, shadowOpacity: 0.035, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
   choiceIcon: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
@@ -7683,7 +7750,10 @@ const styles = StyleSheet.create({
   infoCallout: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 16, borderWidth: 1, borderColor: c.info200, backgroundColor: c.info50, padding: 12 },
   exportButton: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: c.formalio700, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 7 },
   reportHero: { borderRadius: 18, padding: 16, marginBottom: 16 },
-  reportRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.white, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, paddingHorizontal: 12, paddingVertical: 12, shadowColor: c.surface900, shadowOpacity: 0.045, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  reportTap: { width: '100%' },
+  reportRow: { width: '100%', minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.white, borderRadius: 16, borderWidth: 1, borderColor: c.surface200, paddingHorizontal: 12, paddingVertical: 12, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  reportRowBody: { flex: 1, minWidth: 0 },
+  reportRowAction: { flexShrink: 0, gap: 6 },
   reportBadge: { flexShrink: 0 },
   loanEmptyState: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderRadius: 18, borderWidth: 1, borderColor: c.gold200, backgroundColor: c.gold50, padding: 14 },
   loanTrackingCard: { borderRadius: 18, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, padding: 14, shadowColor: c.surface900, shadowOpacity: 0.04, shadowRadius: 10, elevation: 1 },
@@ -7728,9 +7798,10 @@ const styles = StyleSheet.create({
   coverThemeChoice: { flexGrow: 1, minWidth: 132, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, padding: 9, gap: 7 },
   coverThemeChoiceSelected: { borderColor: c.formalio500, backgroundColor: c.formalio50 },
   coverThemeSwatch: { height: 34, borderRadius: 10 },
-  profileInfoRow: { gap: 10, minHeight: 48, paddingVertical: 5, borderTopWidth: 1, borderTopColor: c.surface100 },
+  profileInfoRow: { gap: 10, minHeight: 50, paddingVertical: 7, borderTopWidth: 1, borderTopColor: c.surface100 },
   profileMenu: { backgroundColor: c.white, borderRadius: 20, borderWidth: 1, borderColor: c.surface200, overflow: 'hidden', shadowColor: c.surface900, shadowOpacity: 0.07, shadowRadius: 14, elevation: 3 },
-  profileMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 11, minHeight: 58, paddingHorizontal: 14, paddingVertical: 12 },
+  profileMenuTap: { width: '100%' },
+  profileMenuItem: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 11, minHeight: 58, paddingHorizontal: 14, paddingVertical: 12 },
   profileMenuIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: c.surface50, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   profileMenuLabel: { flex: 1, minWidth: 0, color: c.surface700, fontSize: 13, lineHeight: 17 },
   profileMenuBadge: { flexShrink: 0 },

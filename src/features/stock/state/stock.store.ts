@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { queryStorage, getJson, setJson } from '@/services/storage/mmkv';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { queryStorage, setJson } from '@/services/storage/mmkv';
 import { createUuid } from '@/utils/uuid';
 
 export type StockPriceType = 'fixed' | 'range';
@@ -27,6 +28,27 @@ export type StockItemDraft = {
 };
 
 const STOCK_ITEMS_KEY = 'query.stockItems';
+
+function parseStockItems(raw: string | undefined | null): StockItem[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as StockItem[] : null;
+  } catch {
+    return null;
+  }
+}
+
+function readSyncStockItems() {
+  const raw = queryStorage.getString(STOCK_ITEMS_KEY);
+  if (raw === undefined) return null;
+  return parseStockItems(raw) ?? [];
+}
+
+async function readAsyncStockItems() {
+  const raw = await AsyncStorage.getItem(STOCK_ITEMS_KEY);
+  return parseStockItems(raw);
+}
 
 function normalizeDraft(draft: StockItemDraft, existing?: StockItem): StockItem {
   const now = new Date().toISOString();
@@ -69,6 +91,9 @@ function normalizeDraft(draft: StockItemDraft, existing?: StockItem): StockItem 
 
 function persist(items: StockItem[]) {
   setJson(queryStorage, STOCK_ITEMS_KEY, items);
+  void AsyncStorage.setItem(STOCK_ITEMS_KEY, JSON.stringify(items)).catch(() => {
+    // MMKV remains the primary sync cache; AsyncStorage is a relaunch fallback.
+  });
 }
 
 export function getStockUnitEstimate(item: StockItem) {
@@ -88,6 +113,7 @@ type StockState = {
   items: StockItem[];
   hydrated: boolean;
   hydrate: () => void;
+  replaceItems: (items: StockItem[]) => void;
   upsertItem: (draft: StockItemDraft) => StockItem;
   deleteItem: (id: string) => void;
   decreaseStock: (id: string, quantity: number) => { ok: boolean; item?: StockItem; error?: string };
@@ -98,7 +124,26 @@ export const useStockStore = create<StockState>((set, get) => ({
   hydrated: false,
 
   hydrate() {
-    const items = getJson<StockItem[]>(queryStorage, STOCK_ITEMS_KEY, []);
+    const syncItems = readSyncStockItems();
+    if (syncItems) {
+      set({ items: syncItems, hydrated: true });
+      void AsyncStorage.setItem(STOCK_ITEMS_KEY, JSON.stringify(syncItems)).catch(() => {});
+      return;
+    }
+
+    set({ hydrated: true });
+    void readAsyncStockItems()
+      .then((items) => {
+        if (!items) return;
+        if (get().items.length > 0) return;
+        setJson(queryStorage, STOCK_ITEMS_KEY, items);
+        set({ items, hydrated: true });
+      })
+      .catch(() => {});
+  },
+
+  replaceItems(items) {
+    persist(items);
     set({ items, hydrated: true });
   },
 

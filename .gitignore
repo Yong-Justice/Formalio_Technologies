@@ -12,7 +12,9 @@ build/
 coverage/
 .expo-export-check/
 /apps/
-/supabase/
+/supabase/*
+!/supabase/migrations/
+!/supabase/migrations/*.sql
 *.log
 .env
 .env.*

@@ -15,11 +15,15 @@ const sentryPlugin: NonNullable<ExpoConfig["plugins"]> =
         ],
       ]
     : [];
+const easOwner = process.env.EXPO_PUBLIC_EAS_OWNER ?? "yongjustice";
+const easProjectId =
+  process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
+  (process.env.EXPO_PUBLIC_EAS_OWNER ? undefined : "792092c6-07a1-4608-933f-bcc618880a62");
 
 const config: ExpoConfig = {
   name: "Formalio",
   slug: "formalio-mobile",
-  owner: "yongjustice",
+  owner: easOwner,
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/official-logo.png",
@@ -94,11 +98,7 @@ const config: ExpoConfig = {
       logo: "./assets/images/official-logo.png",
       socialPreview: "./assets/images/social-preview.png",
     },
-    eas: {
-      projectId:
-        process.env.EXPO_PUBLIC_EAS_PROJECT_ID ??
-        "792092c6-07a1-4608-933f-bcc618880a62",
-    },
+    ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
 };
 
