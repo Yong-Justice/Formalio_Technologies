@@ -92,6 +92,7 @@ import {
   Mic,
   Moon,
   Package,
+  Pencil,
   Phone,
   Play,
   Plus,
@@ -135,6 +136,7 @@ import {
 } from './demoData';
 import { MobileMoneyIcon, getMobileMoneyProvider } from '@/components/MobileMoneyIcon';
 import { formalioBackend, type CloudFinancialMetrics, type CloudReportExport, type CloudSubscription } from '@/services/cloud/formalioBackend';
+import { getStockItemValue, getStockUnitEstimate, getTotalStockValue, useStockStore, type StockItem, type StockPriceType } from '@/features/stock/state/stock.store';
 import { useNetworkStore } from '@/services/offline/network';
 import { localizeRuntimeText, translate, type SupportedLanguage } from '@/i18n';
 
@@ -209,6 +211,7 @@ type Screen =
   | 'dashboard'
   | 'transactions'
   | 'add-transaction'
+  | 'stock'
   | 'accounting'
   | 'cashflow'
   | 'credit-score'
@@ -894,6 +897,7 @@ function Field({
   large,
   multiline,
   error,
+  editable = true,
 }: {
   label?: string;
   value: string;
@@ -906,6 +910,7 @@ function Field({
   large?: boolean;
   multiline?: boolean;
   error?: string;
+  editable?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const language = useAppLanguage();
@@ -916,11 +921,12 @@ function Field({
           {label}
         </Txt>
       ) : null}
-      <Animated.View style={[styles.inputBox, focused && styles.inputBoxFocused, large && { paddingVertical: 15 }, multiline && { alignItems: 'flex-start' }, error && { borderColor: c.danger200, backgroundColor: c.danger50 }]}>
+      <Animated.View style={[styles.inputBox, focused && styles.inputBoxFocused, large && { paddingVertical: 15 }, multiline && { alignItems: 'flex-start' }, !editable && styles.calculatedInputBox, error && { borderColor: c.danger200, backgroundColor: c.danger50 }]}>
         {icon ? <Icon icon={icon} size={17} color={c.surface400} /> : null}
         <TextInput
           value={value}
           onChangeText={onChangeText}
+          editable={editable}
           placeholder={placeholder ? localizeRuntimeText(language, placeholder) : undefined}
           placeholderTextColor={c.surface400}
           maxFontSizeMultiplier={1.05}
@@ -2256,6 +2262,7 @@ function StatusfulPrototype() {
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<Date | null>(null);
   const cloudErrorToastShownRef = useRef(false);
   const cloudRetryCountRef = useRef(0);
+  const hydrateStock = useStockStore((state) => state.hydrate);
 
   const showNav = !['auth', 'business-setup'].includes(screen);
   const navigate = useCallback((next: Screen) => {
@@ -2270,6 +2277,7 @@ function StatusfulPrototype() {
       dashboard: 'dashboard',
       transactions: 'dashboard',
       'add-transaction': 'transactions',
+      stock: 'cashflow',
       cashflow: 'dashboard',
       'credit-score': 'dashboard',
       reports: 'dashboard',
@@ -2299,6 +2307,10 @@ function StatusfulPrototype() {
       {children}
     </AppLanguageContext.Provider>
   );
+
+  useEffect(() => {
+    hydrateStock();
+  }, [hydrateStock]);
 
   const hydrateCloudData = useCallback(async (showReadyToast = false) => {
     if (!formalioBackend.isConfigured) return false;
@@ -2564,6 +2576,7 @@ function StatusfulPrototype() {
       ) : null}
       {screen === 'transactions' ? <TransactionsScreen shellProps={shellProps} transactions={transactions} /> : null}
       {screen === 'add-transaction' ? <AddTransactionScreen shellProps={shellProps} cloudCompanyId={cloudCompanyId} transactions={transactions} setTransactions={applyTransactionSnapshot} navigate={navigate} openVoice={() => setVoiceRecorderOpen(true)} openScanner={() => setScannerOpen(true)} setShowConfetti={setShowConfetti} scannedDraft={pendingScan} onScanConsumed={handleScanDraftConsumed} /> : null}
+      {screen === 'stock' ? <StockManagerScreen shellProps={shellProps} /> : null}
       {screen === 'cashflow' ? <CashflowScreen shellProps={shellProps} metrics={financialMetrics} /> : null}
       {screen === 'credit-score' ? <CreditScoreScreen shellProps={shellProps} metrics={financialMetrics} onLoanSubmitted={handleLoanSubmitted} /> : null}
       {screen === 'reports' ? <ReportsScreen shellProps={shellProps} openDownload={openDownload} loanRequests={loanRequests} metrics={financialMetrics} transactions={transactions} /> : null}
@@ -2870,6 +2883,15 @@ function normalizeSearchText(value: string) {
     .trim();
 }
 
+function parseNumberInput(value: string) {
+  const cleaned = value.replace(/\s/g, '').replace(/[^\d.,]/g, '');
+  const normalized = /^\d{1,3}([,.]\d{3})+$/.test(cleaned)
+    ? cleaned.replace(/[,.]/g, '')
+    : cleaned.replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function getTransactionHour(transaction: Transaction) {
   const idSeed = typeof transaction.id === 'number'
     ? transaction.id
@@ -3082,6 +3104,269 @@ function TransactionsScreen({ shellProps, transactions }: { shellProps: ShellPro
   );
 }
 
+function formatStockPrice(item: StockItem) {
+  if (item.priceType === 'fixed') return formatFCFA(item.unitPrice ?? 0);
+  return `~${formatFCFA(item.minPrice ?? 0).replace(' FCFA', '')} - ${formatFCFA(item.maxPrice ?? 0)}`;
+}
+
+function formatStockCompactValue(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1000000) return `${(value / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}M FCFA`;
+  if (abs >= 1000) return `${Math.round(value / 1000)}k FCFA`;
+  return formatFCFA(value);
+}
+
+function StockValueCard({ items, onPress }: { items: StockItem[]; onPress: () => void }) {
+  if (items.length === 0) return null;
+
+  const total = getTotalStockValue(items);
+  return (
+    <Card style={styles.stockValueCard}>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Row style={{ gap: 7, marginBottom: 10 }}>
+            <View style={[styles.metricIcon, { backgroundColor: c.info50 }]}><Icon icon={Package} size={16} color={c.info700} /></View>
+            <Txt weight="black" style={{ color: c.surface800, fontSize: 14 }}>Valeur Totale du Stock</Txt>
+          </Row>
+          <Txt weight="black" style={{ color: c.formalio800, fontSize: 26 }}>{formatFCFA(total)}</Txt>
+          <Txt style={{ color: c.surface500, fontSize: 12, marginTop: 3 }}>≈ {formatStockCompactValue(total)}</Txt>
+        </View>
+      </Row>
+      <Tap onPress={onPress} style={styles.stockValueLink}>
+        <Txt weight="black" style={{ color: c.info700, fontSize: 12 }}>Voir le stock</Txt>
+        <Icon icon={ChevronRight} size={15} color={c.info700} />
+      </Tap>
+    </Card>
+  );
+}
+
+function StockManagerScreen({ shellProps }: { shellProps: ShellProps }) {
+  return (
+    <ScreenWrapper {...shellProps} title="Gestionnaire de Stock">
+      <StockManagerPanel />
+    </ScreenWrapper>
+  );
+}
+
+function StockManagerPanel({ embedded = false }: { embedded?: boolean }) {
+  const { showToast } = useToast();
+  const items = useStockStore((state) => state.items);
+  const upsertItem = useStockStore((state) => state.upsertItem);
+  const deleteItem = useStockStore((state) => state.deleteItem);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<StockItem | null>(null);
+  const [itemName, setItemName] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [priceType, setPriceType] = useState<StockPriceType>('fixed');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const filteredItems = useMemo(() => {
+    const query = normalizeSearchText(searchQuery);
+    if (!query) return items;
+    return items.filter((item) => normalizeSearchText(item.name).includes(query));
+  }, [items, searchQuery]);
+  const totalValue = useMemo(() => getTotalStockValue(items), [items]);
+
+  const resetForm = () => {
+    setEditingItem(null);
+    setItemName('');
+    setQuantity('');
+    setPriceType('fixed');
+    setUnitPrice('');
+    setMinPrice('');
+    setMaxPrice('');
+    setFormErrors({});
+  };
+
+  const openCreateForm = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const openEditForm = (item: StockItem) => {
+    setEditingItem(item);
+    setItemName(item.name);
+    setQuantity(String(item.quantity));
+    setPriceType(item.priceType);
+    setUnitPrice(item.unitPrice ? String(item.unitPrice) : '');
+    setMinPrice(item.minPrice ? String(item.minPrice) : '');
+    setMaxPrice(item.maxPrice ? String(item.maxPrice) : '');
+    setFormErrors({});
+    setFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setFormOpen(false);
+    resetForm();
+  };
+
+  const validateForm = () => {
+    const nextErrors: Record<string, string> = {};
+    const parsedQuantity = parseNumberInput(quantity);
+    const parsedUnitPrice = parseNumberInput(unitPrice);
+    const parsedMinPrice = parseNumberInput(minPrice);
+    const parsedMaxPrice = parseNumberInput(maxPrice);
+
+    if (!itemName.trim()) nextErrors.name = 'Nom requis';
+    if (!quantity.trim() || parsedQuantity < 0) nextErrors.quantity = 'Quantité ≥ 0 requise';
+    if (priceType === 'fixed' && parsedUnitPrice <= 0) nextErrors.unitPrice = 'Prix unitaire > 0 requis';
+    if (priceType === 'range') {
+      if (parsedMinPrice <= 0) nextErrors.minPrice = 'Prix min > 0 requis';
+      if (parsedMaxPrice < parsedMinPrice) nextErrors.maxPrice = 'Prix max ≥ prix min requis';
+    }
+
+    setFormErrors(nextErrors);
+    return { ok: Object.keys(nextErrors).length === 0, parsedQuantity, parsedUnitPrice, parsedMinPrice, parsedMaxPrice };
+  };
+
+  const saveItem = () => {
+    const validation = validateForm();
+    if (!validation.ok) return;
+
+    upsertItem({
+      id: editingItem?.id,
+      name: itemName,
+      quantity: validation.parsedQuantity,
+      priceType,
+      unitPrice: validation.parsedUnitPrice,
+      minPrice: validation.parsedMinPrice,
+      maxPrice: validation.parsedMaxPrice,
+    });
+    showToast({ type: 'success', title: editingItem ? 'Stock modifié' : 'Article ajouté', message: 'Gestionnaire de stock mis à jour.' });
+    closeForm();
+  };
+
+  const removeItem = (item: StockItem) => {
+    deleteItem(item.id);
+    showToast({ type: 'info', title: 'Article supprimé', message: 'Les anciennes transactions restent conservées.' });
+  };
+
+  return (
+    <View style={{ gap: 14 }}>
+      <Card style={embedded ? styles.stockEmbeddedHeader : styles.stockHeaderCard}>
+        <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Row style={{ gap: 8, marginBottom: 4 }}>
+              <View style={[styles.metricIcon, { backgroundColor: c.formalio50 }]}><Icon icon={Package} size={16} color={c.formalio700} /></View>
+              <Txt weight="black" style={{ fontSize: 15 }}>Gestionnaire de Stock</Txt>
+            </Row>
+            <Txt style={{ color: c.surface500, fontSize: 12 }}>{items.length} article{items.length > 1 ? 's' : ''} · {formatFCFA(totalValue)}</Txt>
+          </View>
+          <PrimaryButton label="+ Add Item" icon={Plus} onPress={openCreateForm} style={styles.stockAddButton} />
+        </Row>
+      </Card>
+
+      <View style={styles.inputBox}>
+        <Icon icon={Search} size={16} color={c.surface400} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Rechercher un article..."
+          placeholderTextColor={c.surface400}
+          autoCapitalize="none"
+          style={styles.textInput}
+        />
+        {searchQuery ? (
+          <Tap onPress={() => setSearchQuery('')} accessibilityLabel="Effacer la recherche stock">
+            <Icon icon={X} size={15} color={c.surface400} />
+          </Tap>
+        ) : null}
+      </View>
+
+      {filteredItems.length === 0 ? (
+        <View style={styles.stockEmptyState}>
+          <Icon icon={Package} size={26} color={c.surface400} />
+          <Txt weight="semibold" style={{ color: c.surface700, marginTop: 10 }}>{items.length === 0 ? 'Aucun article en stock' : 'Aucun article trouvé'}</Txt>
+          <Txt style={{ color: c.surface500, fontSize: 12, marginTop: 4, textAlign: 'center' }}>{items.length === 0 ? 'Ajoutez un article pour activer la valorisation et les ventes automatiques.' : 'Essayez un autre nom.'}</Txt>
+          {items.length === 0 ? (
+            <Tap onPress={openCreateForm} style={styles.stockEmptyButton}>
+              <Txt weight="black" style={{ color: c.white, fontSize: 12 }}>Ajouter le premier article</Txt>
+            </Tap>
+          ) : null}
+        </View>
+      ) : (
+        <View style={{ gap: 10 }}>
+          {filteredItems.map((item) => {
+            const outOfStock = item.quantity <= 0;
+            return (
+              <Card key={item.id} style={[styles.stockItemCard, outOfStock && styles.stockItemCardMuted]}>
+                <Row style={{ justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                  <Row style={{ gap: 10, flex: 1, minWidth: 0 }}>
+                    <View style={[styles.stockItemIcon, outOfStock && { backgroundColor: c.surface100 }]}>
+                      <Icon icon={Package} size={17} color={outOfStock ? c.surface400 : c.formalio700} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Txt weight="black" numberOfLines={1} style={{ color: outOfStock ? c.surface500 : c.surface900, fontSize: 14 }}>{item.name}</Txt>
+                      <Row style={{ gap: 6, marginTop: 5 }}>
+                        <Pill tone={outOfStock ? 'surface' : 'green'}>{outOfStock ? 'Rupture' : `${item.quantity} unités`}</Pill>
+                        <Pill tone={item.priceType === 'fixed' ? 'blue' : 'gold'}>{item.priceType === 'fixed' ? 'fixed' : 'range'}</Pill>
+                      </Row>
+                    </View>
+                  </Row>
+                  <Row style={{ gap: 6 }}>
+                    <Tap onPress={() => openEditForm(item)} style={styles.stockIconButton} accessibilityLabel={`Modifier ${item.name}`}>
+                      <Icon icon={Pencil} size={15} color={c.info700} />
+                    </Tap>
+                    <Tap onPress={() => removeItem(item)} style={[styles.stockIconButton, styles.stockDeleteButton]} accessibilityLabel={`Supprimer ${item.name}`}>
+                      <Icon icon={Trash2} size={15} color={c.danger600} />
+                    </Tap>
+                  </Row>
+                </Row>
+                <Grid columns={3} gap={8}>
+                  <View style={styles.stockMetaCell}>
+                    <Txt style={styles.stockMetaLabel}>Prix unitaire</Txt>
+                    <Txt weight="black" numberOfLines={1} style={styles.stockMetaValue}>{formatStockPrice(item)}</Txt>
+                  </View>
+                  <View style={styles.stockMetaCell}>
+                    <Txt style={styles.stockMetaLabel}>Quantité</Txt>
+                    <Txt weight="black" style={styles.stockMetaValue}>{item.quantity}</Txt>
+                  </View>
+                  <View style={styles.stockMetaCell}>
+                    <Txt style={styles.stockMetaLabel}>Valeur estimée</Txt>
+                    <Txt weight="black" numberOfLines={1} style={styles.stockMetaValue}>{formatFCFA(getStockItemValue(item))}</Txt>
+                  </View>
+                </Grid>
+              </Card>
+            );
+          })}
+        </View>
+      )}
+
+      <ModalShell visible={formOpen} onClose={closeForm}>
+        <View style={{ gap: 14 }}>
+          <Row style={{ justifyContent: 'space-between', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Txt weight="black" style={{ fontSize: 18 }}>{editingItem ? 'Modifier article' : 'Ajouter article'}</Txt>
+              <Txt style={{ color: c.surface500, fontSize: 12, marginTop: 3 }}>Prix et quantité en FCFA.</Txt>
+            </View>
+            <Tap onPress={closeForm} style={styles.iconButton}>
+              <Icon icon={X} size={18} color={c.surface500} />
+            </Tap>
+          </Row>
+          <Field label="Item Name" value={itemName} onChangeText={setItemName} placeholder="Ex: Riz 25kg" error={formErrors.name} />
+          <Field label="Quantity" value={quantity} onChangeText={setQuantity} placeholder="0" keyboardType="numeric" error={formErrors.quantity} />
+          <View>
+            <Txt weight="medium" style={styles.fieldLabel}>Price Type</Txt>
+            <Segment value={priceType} onChange={setPriceType} options={[{ key: 'fixed', label: 'Fixed Price' }, { key: 'range', label: 'Price Range' }]} />
+          </View>
+          {priceType === 'fixed' ? (
+            <Field label="Unit Price (FCFA)" value={unitPrice} onChangeText={setUnitPrice} placeholder="Ex: 1500" keyboardType="numeric" error={formErrors.unitPrice} />
+          ) : (
+            <Grid columns={2} gap={8}>
+              <Field label="Min Price (FCFA)" value={minPrice} onChangeText={setMinPrice} placeholder="1500" keyboardType="numeric" error={formErrors.minPrice} />
+              <Field label="Max Price (FCFA)" value={maxPrice} onChangeText={setMaxPrice} placeholder="2000" keyboardType="numeric" error={formErrors.maxPrice} />
+            </Grid>
+          )}
+          <PrimaryButton label="Save" icon={Check} onPress={saveItem} style={{ marginTop: 2 }} />
+        </View>
+      </ModalShell>
+    </View>
+  );
+}
+
 function AddTransactionScreen({
   shellProps,
   cloudCompanyId,
@@ -3112,7 +3397,33 @@ function AddTransactionScreen({
   const [category, setCategory] = useState('');
   const [scanPreview, setScanPreview] = useState<ScannedTicketData | null>(null);
   const [method, setMethod] = useState('Espèces');
+  const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [revenueSource, setRevenueSource] = useState<'stock' | 'other'>('other');
+  const [selectedStockId, setSelectedStockId] = useState('');
+  const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [quantitySold, setQuantitySold] = useState('');
+  const [rangeSaleUnitPrice, setRangeSaleUnitPrice] = useState('');
+  const [stockError, setStockError] = useState('');
+  const stockItems = useStockStore((state) => state.items);
+  const decreaseStock = useStockStore((state) => state.decreaseStock);
   const isExpense = type === 'expense';
+  const stockSaleActive = type === 'income' && revenueSource === 'stock' && stockItems.length > 0;
+  const selectedStockItem = useMemo(() => stockItems.find((item) => item.id === selectedStockId), [selectedStockId, stockItems]);
+  const stockSearchResults = useMemo(() => {
+    const query = normalizeSearchText(stockSearchQuery);
+    if (!query) return stockItems;
+    return stockItems.filter((item) => normalizeSearchText(item.name).includes(query));
+  }, [stockItems, stockSearchQuery]);
+  const quantitySoldNumber = parseNumberInput(quantitySold);
+  const stockSaleUnitPrice = selectedStockItem?.priceType === 'fixed'
+    ? getStockUnitEstimate(selectedStockItem)
+    : parseNumberInput(rangeSaleUnitPrice);
+  const stockSaleAmount = selectedStockItem && quantitySoldNumber > 0 && stockSaleUnitPrice > 0
+    ? quantitySoldNumber * stockSaleUnitPrice
+    : 0;
+  const stockQuantityError = selectedStockItem && quantitySoldNumber > selectedStockItem.quantity
+    ? `Stock insuffisant. Maximum disponible: ${selectedStockItem.quantity}`
+    : '';
   const flowAccent = isExpense ? c.danger600 : c.formalio700;
   const flowSoft = isExpense ? c.danger50 : c.formalio50;
   const signedAmount = Number(amount || 0);
@@ -3123,37 +3434,86 @@ function AddTransactionScreen({
     { label: 'Orange Money', icon: CreditCard },
   ];
   useEffect(() => {
+    if (type === 'expense' || stockItems.length === 0) {
+      setRevenueSource('other');
+    }
+  }, [stockItems.length, type]);
+  useEffect(() => {
+    if (!stockSaleActive) return;
+    setAmount(stockSaleAmount > 0 ? String(Math.round(stockSaleAmount)) : '');
+  }, [stockSaleActive, stockSaleAmount]);
+  useEffect(() => {
+    if (!stockSaleActive || !selectedStockItem) return;
+    setDesc(`Vente de ${selectedStockItem.name}`);
+  }, [selectedStockItem, stockSaleActive]);
+  useEffect(() => {
+    setStockError('');
+  }, [quantitySold, rangeSaleUnitPrice, revenueSource, selectedStockId, type]);
+  useEffect(() => {
     if (scanPreview?.type === type) return;
     setCategory('');
   }, [scanPreview, type]);
   useEffect(() => {
     if (!scannedDraft) return;
     setType(scannedDraft.type);
+    setRevenueSource('other');
     setAmount(String(scannedDraft.amount));
     setDesc(scannedDraft.description);
     setCategory(scannedDraft.category);
     setMethod(scannedDraft.method);
+    setTransactionDate(scannedDraft.date || new Date().toISOString().split('T')[0]);
     setScanPreview(scannedDraft);
     onScanConsumed();
   }, [onScanConsumed, scannedDraft]);
   const handleSave = async () => {
-    if (!amount || !desc) return showToast({ type: 'error', title: 'Champs manquants', message: 'Montant et description requis' });
+    if (stockSaleActive) {
+      if (!selectedStockItem) {
+        setStockError('Sélectionnez un article.');
+        return showToast({ type: 'error', title: 'Article requis', message: 'Sélectionnez un article en stock.' });
+      }
+      if (selectedStockItem.quantity <= 0) {
+        setStockError('Article en rupture de stock.');
+        return showToast({ type: 'error', title: 'Rupture de stock', message: 'Cet article ne peut pas être vendu.' });
+      }
+      if (quantitySoldNumber < 1) {
+        setStockError('Quantité vendue ≥ 1 requise.');
+        return showToast({ type: 'error', title: 'Quantité invalide', message: 'Entrez au moins 1 unité vendue.' });
+      }
+      if (quantitySoldNumber > selectedStockItem.quantity) {
+        setStockError(`Stock insuffisant. Maximum disponible: ${selectedStockItem.quantity}`);
+        return;
+      }
+      if (selectedStockItem.priceType === 'range' && stockSaleUnitPrice <= 0) {
+        setStockError('Prix de vente unitaire requis.');
+        return showToast({ type: 'error', title: 'Prix requis', message: 'Entrez le prix de vente unitaire.' });
+      }
+      if (stockSaleAmount <= 0) {
+        setStockError('Montant calculé invalide.');
+        return;
+      }
+    }
+
+    const finalAmount = stockSaleActive ? Math.round(stockSaleAmount) : Number(amount);
+    const finalDescription = stockSaleActive && selectedStockItem ? (desc.trim() || `Vente de ${selectedStockItem.name}`) : desc;
+    const finalCategory = stockSaleActive ? 'Ventes' : (category || 'Autres');
+
+    if (!finalAmount || !finalDescription) return showToast({ type: 'error', title: 'Champs manquants', message: 'Montant et description requis' });
     const fallbackTransaction: Transaction = {
       id: transactions.length + 1,
-      date: new Date().toISOString().split('T')[0],
-      description: desc,
-      category: category || 'Autres',
+      date: transactionDate || new Date().toISOString().split('T')[0],
+      description: finalDescription,
+      category: finalCategory,
       type,
-      amount: Number(amount),
+      amount: finalAmount,
       method,
       status: 'completed',
     };
     const cloudTransaction = cloudCompanyId
       ? await formalioBackend.createTransaction(cloudCompanyId, {
-          description: desc,
-          category: category || 'Autres',
+          description: finalDescription,
+          category: finalCategory,
           type,
-          amount: Number(amount),
+          amount: finalAmount,
           method,
         }).catch((error) => {
           showToast({ type: 'error', title: 'Cloud sync transaction', message: error instanceof Error ? error.message : 'Transaction gardée localement.' });
@@ -3161,15 +3521,28 @@ function AddTransactionScreen({
         })
       : null;
     setTransactions([cloudTransaction ?? fallbackTransaction, ...transactions]);
+    if (stockSaleActive && selectedStockItem) {
+      const result = decreaseStock(selectedStockItem.id, quantitySoldNumber);
+      if (!result.ok) {
+        setStockError(result.error ?? 'Impossible de mettre à jour le stock.');
+        return showToast({ type: 'error', title: 'Stock non mis à jour', message: result.error ?? 'Vérifiez la quantité disponible.' });
+      }
+    }
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 2500);
-    showToast({ type: 'success', title: 'Transaction enregistrée !', message: `${isExpense ? '-' : '+'}${Number(amount).toLocaleString('fr-FR')} FCFA` });
+    showToast({ type: 'success', title: stockSaleActive ? 'Transaction enregistrée. Stock mis à jour.' : 'Transaction enregistrée !', message: `${isExpense ? '-' : '+'}${finalAmount.toLocaleString('fr-FR')} FCFA` });
     navigate('dashboard');
   };
   return (
     <ScreenWrapper {...shellProps} title="Nouvelle Transaction">
       <View style={{ gap: 16 }}>
         <Segment value={type} onChange={setType} options={[{ key: 'income', label: '+ Revenu' }, { key: 'expense', label: '- Dépense' }]} />
+        {!isExpense && stockItems.length > 0 ? (
+          <View>
+            <Txt weight="medium" style={styles.fieldLabel}>Revenue Source</Txt>
+            <Segment value={revenueSource} onChange={setRevenueSource} options={[{ key: 'stock', label: 'From Stock Item', icon: Package }, { key: 'other', label: 'Other / Service', icon: Receipt }]} />
+          </View>
+        ) : null}
         <View style={[styles.transactionPreview, { borderColor: isExpense ? c.danger200 : c.formalio200, backgroundColor: flowSoft }]}>
           <View style={[styles.transactionPreviewIcon, { backgroundColor: isExpense ? c.danger100 : c.formalio100 }]}>
             <Icon icon={isExpense ? ArrowDownRight : ArrowUpRight} size={18} color={flowAccent} />
@@ -3205,21 +3578,102 @@ function AddTransactionScreen({
             </Row>
           </Animated.View>
         ) : null}
-        <Field label="Montant (FCFA)" value={amount} onChangeText={setAmount} placeholder="0" keyboardType="numeric" large />
-        <Field label="Description" value={desc} onChangeText={setDesc} placeholder="Ex: Vente de tissus" />
-        <View>
-          <Txt weight="medium" style={styles.fieldLabel}>Catégorie</Txt>
-          <View style={styles.chipWrapLeft}>
-            {categories.map((cat) => (
-              <Tap key={cat} onPress={() => setCategory(cat)} style={[styles.selectChip, category === cat && (isExpense ? styles.selectChipExpenseActive : styles.selectChipActive)]}>
-                <Row style={{ gap: 6 }}>
-                  {category === cat ? <View style={[styles.tinyDot, { backgroundColor: flowAccent }]} /> : null}
-                  <Txt weight="medium" style={{ color: category === cat ? flowAccent : c.surface600, fontSize: 12 }}>{cat}</Txt>
-                </Row>
-              </Tap>
-            ))}
-          </View>
-        </View>
+        {stockSaleActive ? (
+          <>
+            <View style={styles.stockSalePanel}>
+              <Txt weight="medium" style={styles.fieldLabel}>Select Stock Item</Txt>
+              <View style={styles.inputBox}>
+                <Icon icon={Search} size={16} color={c.surface400} />
+                <TextInput
+                  value={stockSearchQuery}
+                  onChangeText={setStockSearchQuery}
+                  placeholder="Sélectionner un article..."
+                  placeholderTextColor={c.surface400}
+                  autoCapitalize="none"
+                  style={styles.textInput}
+                />
+              </View>
+              <View style={styles.stockSaleList}>
+                {stockSearchResults.map((item) => {
+                  const selected = item.id === selectedStockId;
+                  const outOfStock = item.quantity <= 0;
+                  return (
+                    <Tap
+                      key={item.id}
+                      disabled={outOfStock}
+                      onPress={() => setSelectedStockId(item.id)}
+                      style={[styles.stockSaleOption, selected && styles.stockSaleOptionSelected, outOfStock && styles.stockSaleOptionDisabled]}
+                    >
+                      <Row style={{ justifyContent: 'space-between', gap: 10 }}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Txt weight="bold" numberOfLines={1} style={{ color: outOfStock ? c.surface400 : c.surface800, fontSize: 12 }}>{item.name}</Txt>
+                          <Txt style={{ color: outOfStock ? c.surface400 : c.surface500, fontSize: 11, marginTop: 2 }}>Stock: {item.quantity} units</Txt>
+                        </View>
+                        <Pill tone={outOfStock ? 'surface' : selected ? 'green' : 'blue'}>{outOfStock ? 'Rupture de stock' : formatStockPrice(item)}</Pill>
+                      </Row>
+                    </Tap>
+                  );
+                })}
+                {stockSearchResults.length === 0 ? (
+                  <View style={styles.stockSaleOptionDisabled}>
+                    <Txt style={{ color: c.surface500, fontSize: 12, textAlign: 'center' }}>Aucun article trouvé.</Txt>
+                  </View>
+                ) : null}
+              </View>
+              {stockError && !stockQuantityError ? <Txt style={{ color: c.danger600, fontSize: 10, marginTop: 5 }}>{stockError}</Txt> : null}
+            </View>
+            <Field label="Quantité vendue" value={quantitySold} onChangeText={setQuantitySold} placeholder="1" keyboardType="numeric" error={stockQuantityError || undefined} />
+            {selectedStockItem?.priceType === 'range' ? (
+              <View style={{ gap: 6 }}>
+                <Field
+                  label="Prix de vente unitaire (FCFA)"
+                  value={rangeSaleUnitPrice}
+                  onChangeText={setRangeSaleUnitPrice}
+                  placeholder={`Ex: 1800 FCFA (estimé entre ${formatFCFA(selectedStockItem.minPrice ?? 0).replace(' FCFA', '')} et ${formatFCFA(selectedStockItem.maxPrice ?? 0)})`}
+                  keyboardType="numeric"
+                />
+                <Txt style={{ color: c.surface500, fontSize: 11 }}>Fourchette enregistrée: {formatFCFA(selectedStockItem.minPrice ?? 0).replace(' FCFA', '')} - {formatFCFA(selectedStockItem.maxPrice ?? 0)}</Txt>
+              </View>
+            ) : null}
+            {selectedStockItem?.priceType === 'fixed' ? (
+              <Row style={styles.autoCalcHint}>
+                <Icon icon={Lock} size={13} color={c.info700} />
+                <Txt weight="bold" style={{ color: c.info700, fontSize: 11 }}>Calculé automatiquement: {formatFCFA(getStockUnitEstimate(selectedStockItem))} × quantité</Txt>
+              </Row>
+            ) : null}
+            <Field
+              label="Montant (FCFA)"
+              value={amount}
+              onChangeText={() => undefined}
+              placeholder="0"
+              keyboardType="numeric"
+              large
+              editable={false}
+              right={<Row style={styles.lockedFieldBadge}><Icon icon={Lock} size={12} color={c.info700} /><Txt weight="black" style={{ color: c.info700, fontSize: 9 }}>Calculé automatiquement</Txt></Row>}
+            />
+            <Field label="Description" value={desc} onChangeText={setDesc} placeholder="Vente de ..." />
+            <Field label="Date" value={transactionDate} onChangeText={setTransactionDate} placeholder="YYYY-MM-DD" />
+          </>
+        ) : (
+          <>
+            <Field label="Montant (FCFA)" value={amount} onChangeText={setAmount} placeholder="0" keyboardType="numeric" large />
+            <Field label="Description" value={desc} onChangeText={setDesc} placeholder="Ex: Vente de tissus" />
+            <Field label="Date" value={transactionDate} onChangeText={setTransactionDate} placeholder="YYYY-MM-DD" />
+            <View>
+              <Txt weight="medium" style={styles.fieldLabel}>Catégorie</Txt>
+              <View style={styles.chipWrapLeft}>
+                {categories.map((cat) => (
+                  <Tap key={cat} onPress={() => setCategory(cat)} style={[styles.selectChip, category === cat && (isExpense ? styles.selectChipExpenseActive : styles.selectChipActive)]}>
+                    <Row style={{ gap: 6 }}>
+                      {category === cat ? <View style={[styles.tinyDot, { backgroundColor: flowAccent }]} /> : null}
+                      <Txt weight="medium" style={{ color: category === cat ? flowAccent : c.surface600, fontSize: 12 }}>{cat}</Txt>
+                    </Row>
+                  </Tap>
+                ))}
+              </View>
+            </View>
+          </>
+        )}
         <View>
           <Txt weight="medium" style={styles.fieldLabel}>Mode de paiement</Txt>
           <Grid columns={3} gap={8}>
@@ -3248,7 +3702,8 @@ function AddTransactionScreen({
 }
 
 function CashflowScreen({ shellProps, metrics }: { shellProps: ShellProps; metrics: CloudFinancialMetrics }) {
-  const [filterMode, setFilterMode] = useState<'all' | 'income' | 'expense'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'income' | 'expense' | 'stock'>('all');
+  const stockItems = useStockStore((state) => state.items);
   const emptySeries = Array.from({ length: 7 }, (_, index) => {
     const day = new Date();
     day.setDate(day.getDate() - (6 - index));
@@ -3274,13 +3729,18 @@ function CashflowScreen({ shellProps, metrics }: { shellProps: ShellProps; metri
           </Row>
           <Txt style={{ color: c.formalio200, fontSize: 11, marginTop: 8 }}>{emptyState ? 'Aucun flux enregistré pour le moment' : `Cash flow net ${net7d >= 0 ? 'positif' : 'négatif'} · rentabilité: ${profitability}%`}</Txt>
         </LinearGradient>
-        <Segment value={filterMode} onChange={setFilterMode} options={[{ key: 'all', label: 'Global', icon: BarChart3 }, { key: 'income', label: 'Revenue', icon: TrendingUp }, { key: 'expense', label: 'Dépense', icon: Receipt }]} />
+        <Segment value={filterMode} onChange={setFilterMode} options={[{ key: 'all', label: 'Global', icon: BarChart3 }, { key: 'income', label: 'Revenue', icon: TrendingUp }, { key: 'expense', label: 'Dépense', icon: Receipt }, { key: 'stock', label: 'Add Stock', icon: Package }]} />
+        {filterMode === 'stock' ? (
+          <StockManagerPanel embedded />
+        ) : (
+          <>
         <Grid columns={2} gap={8}>
           {filterMode !== 'expense' ? <MetricCard label={`Revenus ${filterMode === 'all' ? '(7j)' : 'filtrés'}`} value={`${(totalIncome7d / 1000).toFixed(0)}K FCFA`} tone="green" delta="+8.2%" /> : <View />}
           {filterMode !== 'income' ? <MetricCard label={`Dépenses ${filterMode === 'all' ? '(7j)' : 'filtrées'}`} value={`${(totalExpense7d / 1000).toFixed(0)}K FCFA`} tone="red" delta="-3.1%" /> : <View />}
           {filterMode === 'all' ? <MetricCard label="Profitabilité" value={`${profitability}%`} tone="blue" delta={emptyState ? 'En attente de données' : metrics.profit >= 0 ? 'Rentable' : 'À surveiller'} /> : <View />}
           {filterMode === 'all' ? <MetricCard label="Runway estimé" value={runway ? `${runway} j` : '0 j'} tone="gold" delta={emptyState ? 'Ajoutez des dépenses' : 'Base de données réelles'} /> : <View />}
         </Grid>
+        {filterMode === 'all' ? <StockValueCard items={stockItems} onPress={() => shellProps.navigate('stock')} /> : null}
         <Card>
           <Row style={{ justifyContent: 'space-between', marginBottom: 10 }}>
             <View>
@@ -3323,6 +3783,8 @@ function CashflowScreen({ shellProps, metrics }: { shellProps: ShellProps; metri
             ))}
           </View>
         </Grid>
+          </>
+        )}
       </View>
     </ScreenWrapper>
   );
@@ -7081,6 +7543,7 @@ const styles = StyleSheet.create({
   segmentGlow: { position: 'absolute', left: 10, right: 10, bottom: 4, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
   inputBox: { minHeight: 58, borderRadius: 18, backgroundColor: c.surface50, borderWidth: 2, borderColor: c.surface100, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 9 },
   inputBoxFocused: { borderColor: c.formalio300, backgroundColor: c.white, shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  calculatedInputBox: { borderColor: c.info100, backgroundColor: c.info50 },
   textInput: { flex: 1, minHeight: 30, color: c.surface900, fontFamily: font.medium, fontSize: 15, lineHeight: 21, paddingVertical: 2, paddingHorizontal: 0 },
   fieldLabel: { color: c.surface700, fontSize: 12, marginBottom: 6 },
   vDivider: { width: 1, height: 20, backgroundColor: c.surface300 },
@@ -7131,6 +7594,28 @@ const styles = StyleSheet.create({
   mosikaTip: { flexDirection: 'row', gap: 12, borderRadius: 18, borderWidth: 1, borderColor: c.formalio200, backgroundColor: c.formalio50, padding: 14 },
   transactionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 10, paddingHorizontal: 8 },
   transactionIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  stockValueCard: { borderColor: c.info100, backgroundColor: c.info50, padding: 16 },
+  stockValueLink: { alignSelf: 'flex-start', marginTop: 12, minHeight: 36, borderRadius: 999, backgroundColor: c.white, borderWidth: 1, borderColor: c.info100, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  stockHeaderCard: { borderColor: c.formalio100, backgroundColor: c.white, padding: 15 },
+  stockEmbeddedHeader: { borderColor: c.formalio100, backgroundColor: c.formalio50, padding: 15 },
+  stockAddButton: { minHeight: 42, borderRadius: 14, paddingHorizontal: 12, flexShrink: 0 },
+  stockEmptyState: { alignItems: 'center', borderRadius: 18, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, paddingHorizontal: 22, paddingVertical: 34 },
+  stockEmptyButton: { marginTop: 14, minHeight: 40, borderRadius: 13, backgroundColor: c.formalio700, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
+  stockItemCard: { gap: 12, padding: 12 },
+  stockItemCardMuted: { backgroundColor: c.surface50 },
+  stockItemIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: c.formalio50, alignItems: 'center', justifyContent: 'center' },
+  stockIconButton: { width: 34, height: 34, borderRadius: 11, backgroundColor: c.info50, borderWidth: 1, borderColor: c.info100, alignItems: 'center', justifyContent: 'center' },
+  stockDeleteButton: { backgroundColor: c.danger50, borderColor: c.danger100 },
+  stockMetaCell: { minHeight: 64, borderRadius: 13, borderWidth: 1, borderColor: c.surface100, backgroundColor: c.surface50, padding: 9, justifyContent: 'center' },
+  stockMetaLabel: { color: c.surface400, fontSize: 9.5, marginBottom: 3 },
+  stockMetaValue: { color: c.surface800, fontSize: 10.5, lineHeight: 14 },
+  stockSalePanel: { gap: 8, borderRadius: 18, borderWidth: 1, borderColor: c.formalio100, backgroundColor: c.formalio50, padding: 12 },
+  stockSaleList: { gap: 8 },
+  stockSaleOption: { minHeight: 58, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.white, padding: 11, justifyContent: 'center' },
+  stockSaleOptionSelected: { borderColor: c.formalio400, backgroundColor: c.white },
+  stockSaleOptionDisabled: { minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: c.surface200, backgroundColor: c.surface100, padding: 11, justifyContent: 'center' },
+  autoCalcHint: { alignItems: 'flex-start', gap: 7, borderRadius: 14, borderWidth: 1, borderColor: c.info100, backgroundColor: c.info50, paddingHorizontal: 11, paddingVertical: 9 },
+  lockedFieldBadge: { gap: 4, flexShrink: 1, borderRadius: 999, backgroundColor: c.white, borderWidth: 1, borderColor: c.info100, paddingHorizontal: 8, paddingVertical: 5 },
   paymentMethodInline: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0, flexShrink: 1 },
   paymentMethodMiniIcon: { borderWidth: 1, borderColor: c.surface100, shadowColor: c.surface900, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
   paymentBrandPill: { paddingLeft: 6, paddingRight: 9, paddingVertical: 5 },
