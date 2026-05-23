@@ -894,24 +894,48 @@ function Segment<T extends string>({ value, options, onChange, style }: { value:
       {options.map((option) => {
         const selected = value === option.key;
         const label = getAndroidSegmentLabel(option.label, options.length);
+        if (androidTight) {
+          return (
+            <Pressable
+              key={option.key}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              onPress={() => onChange(option.key)}
+              style={({ pressed }) => [
+                styles.segmentAndroidCell,
+                selected && styles.segmentAndroidCellSelected,
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <Txt
+                weight="bold"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.66}
+                style={[styles.segmentLabel, styles.segmentLabelAndroidTight, { color: selected ? c.formalio700 : c.surface500 }]}
+              >
+                {label}
+              </Txt>
+              {selected ? <Animated.View entering={FadeIn.duration(140)} style={styles.segmentAndroidGlow} /> : null}
+            </Pressable>
+          );
+        }
         return (
           <Tap
             key={option.key}
             onPress={() => onChange(option.key)}
-            style={[styles.segmentTap, androidTight && { flex: 0, width: `${100 / options.length}%` }]}
+            style={styles.segmentTap}
           >
-            <View style={[styles.segmentItem, compact && styles.segmentItemCompact, androidTight && styles.segmentItemAndroidTight, selected && styles.segmentSelected]}>
-              {option.icon && !androidTight ? <Icon icon={option.icon} size={compact ? 13 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
+            <View style={[styles.segmentItem, compact && styles.segmentItemCompact, selected && styles.segmentSelected]}>
+              {option.icon ? <Icon icon={option.icon} size={compact ? 13 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
               <Txt
                 weight="bold"
                 numberOfLines={1}
-                adjustsFontSizeToFit={androidTight}
-                minimumFontScale={0.68}
-                style={[styles.segmentLabel, compact && styles.segmentLabelCompact, androidTight && styles.segmentLabelAndroidTight, { color: selected ? c.formalio700 : c.surface500 }]}
+                style={[styles.segmentLabel, compact && styles.segmentLabelCompact, { color: selected ? c.formalio700 : c.surface500 }]}
               >
                 {label}
               </Txt>
-              {selected ? <Animated.View entering={FadeIn.duration(140)} style={[styles.segmentGlow, androidTight && styles.segmentGlowCompact]} /> : null}
+              {selected ? <Animated.View entering={FadeIn.duration(140)} style={styles.segmentGlow} /> : null}
             </View>
           </Tap>
         );
@@ -7659,18 +7683,20 @@ const styles = StyleSheet.create({
   segmentTrack: { flexDirection: 'row', alignItems: 'stretch', gap: 5 },
   segmentTrackFill: { width: '100%' },
   segmentTrackCompact: { gap: 3 },
-  segmentTrackAndroidTight: { gap: 0 },
+  segmentTrackAndroidTight: { gap: 4 },
   segmentScrollContent: { flexDirection: 'row', gap: 5 },
   segmentTap: { flex: 1, minWidth: 0 },
   segmentTapScrollable: { flex: 0, minWidth: 104 },
   segmentItem: { width: '100%', borderRadius: 11, minHeight: 44, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 8, position: 'relative', overflow: 'hidden' },
   segmentItemCompact: { gap: 4, paddingHorizontal: 6 },
-  segmentItemAndroidTight: { minHeight: 42, gap: 0, paddingHorizontal: 1 },
+  segmentAndroidCell: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 42, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, position: 'relative', overflow: 'hidden' },
+  segmentAndroidCellSelected: { backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   segmentLabel: { fontSize: 10.5, lineHeight: 14, textAlign: 'center', flexShrink: 1 },
   segmentLabelCompact: { fontSize: 10, lineHeight: 13 },
-  segmentLabelAndroidTight: { width: '100%', fontSize: 9.1, lineHeight: 11.5, letterSpacing: 0 },
+  segmentLabelAndroidTight: { width: '100%', fontSize: 9.4, lineHeight: 12, letterSpacing: 0 },
   segmentSelected: { backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   segmentGlow: { position: 'absolute', left: 12, right: 12, bottom: 0, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
+  segmentAndroidGlow: { position: 'absolute', left: 8, right: 8, bottom: 0, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
   segmentGlowCompact: { left: 8, right: 8 },
   inputBox: { minHeight: 58, borderRadius: 18, backgroundColor: c.surface50, borderWidth: 2, borderColor: c.surface100, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 9 },
   inputBoxFocused: { borderColor: c.formalio300, backgroundColor: c.white, shadowColor: c.formalio900, shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
