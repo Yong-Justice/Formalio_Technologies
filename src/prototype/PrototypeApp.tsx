@@ -878,33 +878,40 @@ function DonutChart({ data, size = 128 }: { data: { name: string; value: number;
   );
 }
 
+function getAndroidSegmentLabel(label: string, optionCount: number) {
+  if (!isAndroidNative) return label;
+  if (label === 'Add Stock') return 'Stock';
+  if (label === 'Dépenses' && optionCount >= 5) return 'Dép.';
+  return label;
+}
+
 function Segment<T extends string>({ value, options, onChange, style }: { value: T; options: { key: T; label: string; icon?: LucideIcon }[]; onChange: (v: T) => void; style?: StyleProp<ViewStyle> }) {
   const compact = options.length >= 4;
-  const androidCompact = isAndroidNative && compact;
+  const androidTight = isAndroidNative && options.length >= 3;
   return (
     <View style={[styles.segment, style]}>
-      <View style={[styles.segmentTrack, styles.segmentTrackFill, androidCompact && styles.segmentTrackCompact]}>
+      <View style={[styles.segmentTrack, styles.segmentTrackFill, androidTight && styles.segmentTrackAndroidTight, compact && !androidTight && styles.segmentTrackCompact]}>
       {options.map((option) => {
         const selected = value === option.key;
-        const label = androidCompact && option.label === 'Add Stock' ? 'Stock' : option.label;
+        const label = getAndroidSegmentLabel(option.label, options.length);
         return (
           <Tap
             key={option.key}
             onPress={() => onChange(option.key)}
-            style={styles.segmentTap}
+            style={[styles.segmentTap, androidTight && { flex: 0, width: `${100 / options.length}%` }]}
           >
-            <View style={[styles.segmentItem, compact && styles.segmentItemCompact, androidCompact && styles.segmentItemAndroidCompact, selected && styles.segmentSelected]}>
-              {option.icon && !androidCompact ? <Icon icon={option.icon} size={compact ? 13 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
+            <View style={[styles.segmentItem, compact && styles.segmentItemCompact, androidTight && styles.segmentItemAndroidTight, selected && styles.segmentSelected]}>
+              {option.icon && !androidTight ? <Icon icon={option.icon} size={compact ? 13 : 14} color={selected ? c.formalio700 : c.surface500} /> : null}
               <Txt
                 weight="bold"
                 numberOfLines={1}
-                adjustsFontSizeToFit={androidCompact}
-                minimumFontScale={0.78}
-                style={[styles.segmentLabel, compact && styles.segmentLabelCompact, androidCompact && styles.segmentLabelAndroidCompact, { color: selected ? c.formalio700 : c.surface500 }]}
+                adjustsFontSizeToFit={androidTight}
+                minimumFontScale={0.68}
+                style={[styles.segmentLabel, compact && styles.segmentLabelCompact, androidTight && styles.segmentLabelAndroidTight, { color: selected ? c.formalio700 : c.surface500 }]}
               >
                 {label}
               </Txt>
-              {selected ? <Animated.View entering={FadeIn.duration(140)} style={[styles.segmentGlow, androidCompact && styles.segmentGlowCompact]} /> : null}
+              {selected ? <Animated.View entering={FadeIn.duration(140)} style={[styles.segmentGlow, androidTight && styles.segmentGlowCompact]} /> : null}
             </View>
           </Tap>
         );
@@ -2359,10 +2366,11 @@ function StatusfulPrototype() {
         setCloudSyncState('idle');
         return false;
       }
+      const reconciledStockItems = await reconcileStockItemsWithCloud(data.companyId, data.stockItems ?? []);
       setCloudCompanyId(data.companyId);
       setProfile(data.profile as BusinessProfile);
       setTransactions(data.transactions);
-      replaceStockItems(data.stockItems ?? []);
+      replaceStockItems(reconciledStockItems);
       setFinancialMetrics(data.metrics ?? emptyFinancialMetrics);
       setSubscription(data.subscription ?? defaultSubscription);
       setNotifications(data.notifications);
@@ -3150,6 +3158,41 @@ function formatStockCompactValue(value: number) {
   return formatFCFA(value);
 }
 
+function stockUpdatedAtMs(item: StockItem) {
+  const parsed = new Date(item.updatedAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortStockItems(items: StockItem[]) {
+  return [...items].sort((a, b) => stockUpdatedAtMs(b) - stockUpdatedAtMs(a));
+}
+
+async function reconcileStockItemsWithCloud(companyId: string, cloudItems: StockItem[]) {
+  const localItems = useStockStore.getState().items;
+  if (localItems.length === 0) return sortStockItems(cloudItems);
+
+  const cloudById = new Map(cloudItems.map((item) => [item.id, item]));
+  const mergedById = new Map(cloudItems.map((item) => [item.id, item]));
+  const pendingUploads: StockItem[] = [];
+
+  localItems.forEach((localItem) => {
+    const cloudItem = cloudById.get(localItem.id);
+    if (!cloudItem || stockUpdatedAtMs(localItem) > stockUpdatedAtMs(cloudItem)) {
+      mergedById.set(localItem.id, localItem);
+      pendingUploads.push(localItem);
+    }
+  });
+
+  if (pendingUploads.length === 0) return sortStockItems(Array.from(mergedById.values()));
+
+  const uploads = await Promise.allSettled(pendingUploads.map((item) => formalioBackend.upsertStockItem(companyId, item)));
+  const failed = uploads.find((result) => result.status === 'rejected');
+  if (failed?.status === 'rejected') throw failed.reason;
+
+  const refreshed = await formalioBackend.getStockItems(companyId).catch(() => null);
+  return sortStockItems(refreshed && refreshed.length > 0 ? refreshed : Array.from(mergedById.values()));
+}
+
 function StockValueCard({ items, onPress }: { items: StockItem[]; onPress: () => void }) {
   if (items.length === 0) return null;
 
@@ -3187,6 +3230,7 @@ function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedd
   const items = useStockStore((state) => state.items);
   const upsertItem = useStockStore((state) => state.upsertItem);
   const deleteItem = useStockStore((state) => state.deleteItem);
+  const replaceItems = useStockStore((state) => state.replaceItems);
   const [searchQuery, setSearchQuery] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
@@ -3197,6 +3241,7 @@ function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedd
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [stockSyncing, setStockSyncing] = useState(false);
   const filteredItems = useMemo(() => {
     const query = normalizeSearchText(searchQuery);
     if (!query) return items;
@@ -3256,7 +3301,7 @@ function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedd
     return { ok: Object.keys(nextErrors).length === 0, parsedQuantity, parsedUnitPrice, parsedMinPrice, parsedMaxPrice };
   };
 
-  const saveItem = () => {
+  const saveItem = async () => {
     const validation = validateForm();
     if (!validation.ok) return;
 
@@ -3270,20 +3315,31 @@ function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedd
       maxPrice: validation.parsedMaxPrice,
     });
     if (cloudCompanyId) {
-      void formalioBackend.upsertStockItem(cloudCompanyId, saved).catch((error) => {
+      setStockSyncing(true);
+      try {
+        const cloudSaved = await formalioBackend.upsertStockItem(cloudCompanyId, saved);
+        if (cloudSaved) {
+          const nextItems = useStockStore.getState().items.map((item) => (item.id === cloudSaved.id ? cloudSaved : item));
+          replaceItems(sortStockItems(nextItems));
+        }
+      } catch (error) {
         showToast({ type: 'error', title: 'Sync cloud stock', message: error instanceof Error ? error.message : 'Stock gardé localement.' });
-      });
+      } finally {
+        setStockSyncing(false);
+      }
     }
     showToast({ type: 'success', title: editingItem ? 'Stock modifié' : 'Article ajouté', message: 'Gestionnaire de stock mis à jour.' });
     closeForm();
   };
 
-  const removeItem = (item: StockItem) => {
+  const removeItem = async (item: StockItem) => {
     deleteItem(item.id);
     if (cloudCompanyId) {
-      void formalioBackend.deleteStockItem(cloudCompanyId, item.id).catch((error) => {
+      try {
+        await formalioBackend.deleteStockItem(cloudCompanyId, item.id);
+      } catch (error) {
         showToast({ type: 'error', title: 'Sync cloud stock', message: error instanceof Error ? error.message : 'Suppression gardée localement.' });
-      });
+      }
     }
     showToast({ type: 'info', title: 'Article supprimé', message: 'Les anciennes transactions restent conservées.' });
   };
@@ -3355,7 +3411,7 @@ function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedd
                     <Tap onPress={() => openEditForm(item)} style={styles.stockIconButton} accessibilityLabel={`Modifier ${item.name}`}>
                       <Icon icon={Pencil} size={15} color={c.info700} />
                     </Tap>
-                    <Tap onPress={() => removeItem(item)} style={[styles.stockIconButton, styles.stockDeleteButton]} accessibilityLabel={`Supprimer ${item.name}`}>
+                    <Tap onPress={() => { void removeItem(item); }} style={[styles.stockIconButton, styles.stockDeleteButton]} accessibilityLabel={`Supprimer ${item.name}`}>
                       <Icon icon={Trash2} size={15} color={c.danger600} />
                     </Tap>
                   </Row>
@@ -3405,7 +3461,7 @@ function StockManagerPanel({ embedded = false, cloudCompanyId = null }: { embedd
               <Field label="Max Price (FCFA)" value={maxPrice} onChangeText={setMaxPrice} placeholder="2000" keyboardType="numeric" error={formErrors.maxPrice} />
             </Grid>
           )}
-          <PrimaryButton label="Save" icon={Check} onPress={saveItem} style={{ marginTop: 2 }} />
+          <PrimaryButton label={stockSyncing ? 'Synchronisation...' : 'Save'} icon={stockSyncing ? RefreshCw : Check} disabled={stockSyncing} onPress={() => { void saveItem(); }} style={{ marginTop: 2 }} />
         </View>
       </ModalShell>
     </View>
@@ -3451,6 +3507,7 @@ function AddTransactionScreen({
   const [stockError, setStockError] = useState('');
   const stockItems = useStockStore((state) => state.items);
   const decreaseStock = useStockStore((state) => state.decreaseStock);
+  const replaceItems = useStockStore((state) => state.replaceItems);
   const isExpense = type === 'expense';
   const stockSaleActive = type === 'income' && revenueSource === 'stock' && stockItems.length > 0;
   const selectedStockItem = useMemo(() => stockItems.find((item) => item.id === selectedStockId), [selectedStockId, stockItems]);
@@ -3573,9 +3630,15 @@ function AddTransactionScreen({
         return showToast({ type: 'error', title: 'Stock non mis à jour', message: result.error ?? 'Vérifiez la quantité disponible.' });
       }
       if (cloudCompanyId && result.item) {
-        void formalioBackend.upsertStockItem(cloudCompanyId, result.item).catch((error) => {
+        try {
+          const cloudSaved = await formalioBackend.upsertStockItem(cloudCompanyId, result.item);
+          if (cloudSaved) {
+            const nextItems = useStockStore.getState().items.map((item) => (item.id === cloudSaved.id ? cloudSaved : item));
+            replaceItems(sortStockItems(nextItems));
+          }
+        } catch (error) {
           showToast({ type: 'error', title: 'Sync cloud stock', message: error instanceof Error ? error.message : 'Stock mis à jour localement.' });
-        });
+        }
       }
     }
     setShowConfetti(true);
@@ -7596,15 +7659,16 @@ const styles = StyleSheet.create({
   segmentTrack: { flexDirection: 'row', alignItems: 'stretch', gap: 5 },
   segmentTrackFill: { width: '100%' },
   segmentTrackCompact: { gap: 3 },
+  segmentTrackAndroidTight: { gap: 0 },
   segmentScrollContent: { flexDirection: 'row', gap: 5 },
   segmentTap: { flex: 1, minWidth: 0 },
   segmentTapScrollable: { flex: 0, minWidth: 104 },
   segmentItem: { width: '100%', borderRadius: 11, minHeight: 44, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 5, paddingHorizontal: 8, position: 'relative', overflow: 'hidden' },
   segmentItemCompact: { gap: 4, paddingHorizontal: 6 },
-  segmentItemAndroidCompact: { minHeight: 42, gap: 0, paddingHorizontal: 3 },
+  segmentItemAndroidTight: { minHeight: 42, gap: 0, paddingHorizontal: 1 },
   segmentLabel: { fontSize: 10.5, lineHeight: 14, textAlign: 'center', flexShrink: 1 },
   segmentLabelCompact: { fontSize: 10, lineHeight: 13 },
-  segmentLabelAndroidCompact: { width: '100%', fontSize: 9.2, lineHeight: 11.5, letterSpacing: 0 },
+  segmentLabelAndroidTight: { width: '100%', fontSize: 9.1, lineHeight: 11.5, letterSpacing: 0 },
   segmentSelected: { backgroundColor: c.white, shadowColor: c.surface900, shadowOpacity: 0.06, shadowRadius: 5, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   segmentGlow: { position: 'absolute', left: 12, right: 12, bottom: 0, height: 2, borderRadius: 2, backgroundColor: c.formalio400 },
   segmentGlowCompact: { left: 8, right: 8 },

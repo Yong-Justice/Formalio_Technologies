@@ -943,7 +943,7 @@ export const formalioBackend = {
         .limit(100),
         [],
       ),
-      readOptional<StockItemRow[]>(
+      readRequired<StockItemRow[]>(
         'stock_items',
         supabase
         .from('stock_items')
@@ -951,7 +951,7 @@ export const formalioBackend = {
         .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false }),
-        [],
+        'Impossible de charger le stock cloud.',
       ),
       readOptional<any[]>(
         'notifications',
