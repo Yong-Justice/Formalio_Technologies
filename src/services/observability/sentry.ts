@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/react-native';
-import { Env } from '@/config/env';
+import { Env } from '@/constants/config';
 
 const release = Env.sentryRelease || `formalio-mobile@${Env.appVersion}+${Env.nativeBuildVersion}`;
 

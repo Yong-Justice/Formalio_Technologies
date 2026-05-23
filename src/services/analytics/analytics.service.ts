@@ -1,4 +1,4 @@
-import { Env } from '@/config/env';
+import { Env } from '@/constants/config';
 import { prefsStorage } from '@/services/storage/mmkv';
 
 export type AnalyticsEvent =

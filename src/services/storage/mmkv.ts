@@ -1,4 +1,4 @@
-import { Env } from "@/config/env";
+import { Env } from "@/constants/config";
 
 type SyncStorage = {
   getString: (key: string) => string | undefined;

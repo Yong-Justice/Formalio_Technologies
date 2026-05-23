@@ -5,12 +5,12 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { analytics } from '@/services/analytics/analytics.service';
-import { useAuthStore } from '@/features/auth/state/auth.store';
-import { useFinanceStore } from '@/features/finance/state/finance.store';
-import { notificationService } from '@/services/notifications/notifications.service';
+import { useAuthStore } from '@/store/authStore';
+import { useFinanceStore } from '@/store/financeStore';
+import { notificationService } from '@/services/notifications/notificationService';
 import { observability } from '@/services/observability/observability.service';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import { useOfflineSync } from '@/services/offline/sync';
+import { useOfflineSync } from '@/services/sync/syncService';
 
 const queryClient = new QueryClient({
   defaultOptions: {

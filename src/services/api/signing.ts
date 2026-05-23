@@ -1,5 +1,5 @@
 import CryptoJS from "crypto-js";
-  import { Env } from "@/config/env";
+  import { Env } from "@/constants/config";
 
   // ---------------------------------------------------------------------------
   // Transaction Request Signing
