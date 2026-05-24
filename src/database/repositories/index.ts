@@ -1,0 +1,16 @@
+export {
+  createLocalRepository,
+  getOutboxItems,
+  getSyncState,
+  markLocalRecordConflict,
+  markLocalRecordFailed,
+  markLocalRecordSynced,
+  markOutboxItemFailed,
+  markOutboxItemSynced,
+  recordSyncConflict,
+  registerSyncTableRunner,
+  removeOutboxRecord,
+  repositories,
+  setSyncState,
+  upsertCloudRecordLocally,
+} from './localRepository';

@@ -1,6 +1,6 @@
 export type Language = 'fr' | 'en' | 'pcm';
   export type TransactionType = 'income' | 'expense';
-  export type SyncStatus = 'synced' | 'pending' | 'failed';
+  export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed' | 'conflict';
   export interface User { id: string; phone: string; email?: string; fullName: string; language: Language; onboardingCompleted: boolean; biometricEnabled: boolean; }
   export interface Business { id: string; name: string; type: string; city: string; country: string; taxRegime?: string; }
   export interface Transaction { id: string; businessId: string; type: TransactionType; amount: number; category: string; description?: string; date: string; paymentMethod?: string; syncStatus: SyncStatus; deletedAt?: string | null; }
@@ -10,4 +10,3 @@ export type Language = 'fr' | 'en' | 'pcm';
   export interface WalletBalance { businessId: string; amount: number; currency: 'XAF'; lastUpdated: string; }
   /** MTN MoMo / Orange Money exchange rates — 1h TTL */
   export interface ExchangeRate { provider: 'mtn_momo' | 'orange_money'; fromCurrency: string; toCurrency: string; rate: number; updatedAt: string; }
-  

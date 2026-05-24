@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { queryStorage, setJson } from '@/services/storage/mmkv';
 import { createUuid } from '@/utils/uuid';
+import { repositories } from '@/database/repositories';
+import { useAuthStore } from '@/store/authStore';
 
 export type StockPriceType = 'fixed' | 'range';
 
@@ -96,6 +98,56 @@ function persist(items: StockItem[]) {
   });
 }
 
+function parseItemTime(value: string) {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Date.now() : parsed;
+}
+
+function getDatabaseOwner() {
+  const user = useAuthStore.getState().user as (ReturnType<typeof useAuthStore.getState>['user'] & { businessId?: string }) | null;
+  if (!user) return null;
+  return { userId: user.id, companyId: user.businessId ?? null };
+}
+
+async function upsertStockItemInDatabase(item: StockItem) {
+  const owner = getDatabaseOwner();
+  if (!owner) return;
+
+  const price = getStockUnitEstimate(item);
+  const payload = {
+    company_id: owner.companyId,
+    name: item.name,
+    current_quantity: item.quantity,
+    selling_price_per_unit: price,
+    purchase_price_per_unit: price,
+    total_stock_value: item.quantity * price,
+    is_active: true,
+    is_dead_stock: false,
+    created_at: parseItemTime(item.createdAt),
+    updated_at: parseItemTime(item.updatedAt),
+  };
+
+  try {
+    await repositories.stock_items.updateRecord(item.id, owner.userId, payload);
+  } catch {
+    await repositories.stock_items.createRecord({
+      id: item.id,
+      user_id: owner.userId,
+      ...payload,
+    });
+  }
+}
+
+async function deleteStockItemFromDatabase(itemId: string) {
+  const owner = getDatabaseOwner();
+  if (!owner) return;
+  try {
+    await repositories.stock_items.deleteRecord(itemId, owner.userId);
+  } catch {
+    // The MMKV cache remains the source currently shown by screens; SQLite will catch up on next import if needed.
+  }
+}
+
 export function getStockUnitEstimate(item: StockItem) {
   if (item.priceType === 'fixed') return Number(item.unitPrice) || 0;
   return ((Number(item.minPrice) || 0) + (Number(item.maxPrice) || 0)) / 2;
@@ -156,6 +208,7 @@ export const useStockStore = create<StockState>((set, get) => ({
       : [saved, ...current];
     persist(next);
     set({ items: next, hydrated: true });
+    void upsertStockItemInDatabase(saved).catch(() => {});
     return saved;
   },
 
@@ -163,6 +216,7 @@ export const useStockStore = create<StockState>((set, get) => ({
     const next = get().items.filter((item) => item.id !== id);
     persist(next);
     set({ items: next, hydrated: true });
+    void deleteStockItemFromDatabase(id).catch(() => {});
   },
 
   decreaseStock(id, quantity) {
@@ -178,6 +232,7 @@ export const useStockStore = create<StockState>((set, get) => ({
     const next = current.map((item) => (item.id === id ? updated : item));
     persist(next);
     set({ items: next, hydrated: true });
+    void upsertStockItemInDatabase(updated).catch(() => {});
     return { ok: true, item: updated };
   },
 }));

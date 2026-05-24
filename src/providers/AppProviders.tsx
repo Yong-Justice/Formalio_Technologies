@@ -11,6 +11,8 @@ import { notificationService } from '@/services/notifications/notificationServic
 import { observability } from '@/services/observability/observability.service';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { useOfflineSync } from '@/services/sync/syncService';
+import { initializeDatabase } from '@/database';
+import { importLegacyCaches } from '@/database/bootstrap';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,9 +41,14 @@ function AppBoot() {
   const hydrateAuth = useAuthStore((s) => s.hydrate);
   const hydrateFinance = useFinanceStore((s) => s.hydrate);
   const user = useAuthStore((s) => s.user);
+  const selectedBusinessId = useFinanceStore((s) => s.selectedBusinessId);
 
   React.useEffect(() => {
     hydrateAuth();
+    void initializeDatabase().catch((error) => {
+      observability.captureException(error, { operation: 'database_boot' });
+    });
+
     const timer = setTimeout(() => {
       hydrateFinance();
     }, 0);
@@ -61,6 +68,15 @@ function AppBoot() {
       cleanupNotifications?.();
     };
   }, [hydrateAuth, hydrateFinance]);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const telemetryUser = user as typeof user & { businessId?: string };
+    const companyId = selectedBusinessId ?? telemetryUser.businessId ?? null;
+    void importLegacyCaches(user.id, companyId).catch((error) => {
+      observability.captureException(error, { operation: 'database_legacy_import' });
+    });
+  }, [selectedBusinessId, user]);
 
   React.useEffect(() => {
     const subscription = AppState.addEventListener('change', (state: AppStateStatus) => {

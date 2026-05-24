@@ -60,6 +60,7 @@ const config: ExpoConfig = {
   plugins: [
     "expo-asset",
     "expo-router",
+    "expo-sqlite",
     "expo-secure-store",
     "expo-local-authentication",
     [

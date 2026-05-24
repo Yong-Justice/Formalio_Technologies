@@ -1,3 +1,5 @@
-export async function syncTransactions() {
-  return { synced: 0 };
+import { syncTable } from './databaseSync';
+
+export async function syncTransactions(userId: string) {
+  return syncTable('transactions', userId);
 }
