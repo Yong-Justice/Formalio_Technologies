@@ -15,7 +15,7 @@ import {
   upsertCloudRecordLocally,
 } from '@/database/repositories';
 import { syncableTableNames } from '@/database/schema';
-import { isSupabaseConfigured } from '@/services/api/supabase';
+import { isSupabaseConfigured, supabase } from '@/services/api/supabase';
 import { useNetworkStore } from '@/services/sync/network';
 import type { DatabaseTableName, SyncSummary, SyncableRecord } from '@/types/database.types';
 
@@ -23,6 +23,10 @@ type LocalRow = SyncableRecord & Record<string, unknown>;
 
 function emptySummary(): SyncSummary {
   return { pushed: 0, pulled: 0, failed: 0, conflicts: 0 };
+}
+
+function syncDebug(message: string, payload?: Record<string, unknown>) {
+  if (__DEV__) console.debug(message, payload);
 }
 
 function mergeSummary(total: SyncSummary, next: SyncSummary) {
@@ -35,6 +39,25 @@ function mergeSummary(total: SyncSummary, next: SyncSummary) {
 
 function timestamp(value: unknown) {
   return typeof value === 'number' ? value : 0;
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function getAuthenticatedSupabaseUserId() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return null;
+  return data.user?.id ?? null;
+}
+
+async function canSyncUser(userId: string) {
+  if (!userId || !isUuid(userId) || !isSupabaseConfigured || !useNetworkStore.getState().isOnline) {
+    return false;
+  }
+
+  const cloudUserId = await getAuthenticatedSupabaseUserId();
+  return cloudUserId === userId;
 }
 
 function stableStringify(value: unknown) {
@@ -70,12 +93,12 @@ async function pushPending(tableName: DatabaseTableName, userId: string) {
       await markLocalRecordSynced(tableName, payload.id, userId);
       await markOutboxItemSynced(item);
       pushed += 1;
-      console.debug(`[sync] Cloud update successful`, { tableName, recordId: payload.id });
+      syncDebug('[sync] Cloud update successful', { tableName, recordId: payload.id });
     } catch (error) {
       await markOutboxItemFailed(item, error);
       await markLocalRecordFailed(tableName, item.record_id, userId);
       failed += 1;
-      console.debug(`[sync] Sync failed`, { tableName, recordId: item.record_id, error });
+      syncDebug('[sync] Sync failed', { tableName, recordId: item.record_id, error });
     }
   }
 
@@ -135,12 +158,8 @@ async function pullCloud(tableName: DatabaseTableName, userId: string) {
   return { pulled, conflicts };
 }
 
-export async function syncTable(tableName: DatabaseTableName, userId: string): Promise<SyncSummary> {
-  if (!userId || !isSupabaseConfigured || !useNetworkStore.getState().isOnline) {
-    return emptySummary();
-  }
-
-  console.debug('[sync] Sync started', { tableName, userId });
+async function syncTableForAuthenticatedUser(tableName: DatabaseTableName, userId: string): Promise<SyncSummary> {
+  syncDebug('[sync] Sync started', { tableName, userId });
   const summary = emptySummary();
 
   const pushResult = await pushPending(tableName, userId);
@@ -151,21 +170,30 @@ export async function syncTable(tableName: DatabaseTableName, userId: string): P
     const pullResult = await pullCloud(tableName, userId);
     summary.pulled += pullResult.pulled;
     summary.conflicts += pullResult.conflicts;
-    console.debug('[sync] Sync completed', { tableName, ...summary });
+    syncDebug('[sync] Sync completed', { tableName, ...summary });
   } catch (error) {
     summary.failed += 1;
-    console.debug('[sync] Sync failed', { tableName, error });
+    syncDebug('[sync] Sync failed', { tableName, error });
   }
 
   return summary;
 }
 
+export async function syncTable(tableName: DatabaseTableName, userId: string): Promise<SyncSummary> {
+  if (!(await canSyncUser(userId))) {
+    return emptySummary();
+  }
+
+  return syncTableForAuthenticatedUser(tableName, userId);
+}
+
 export async function syncAllTables(userId?: string | null) {
   if (!userId) return emptySummary();
+  if (!(await canSyncUser(userId))) return emptySummary();
 
   const summary = emptySummary();
   for (const tableName of syncableTableNames) {
-    mergeSummary(summary, await syncTable(tableName, userId));
+    mergeSummary(summary, await syncTableForAuthenticatedUser(tableName, userId));
   }
   return summary;
 }

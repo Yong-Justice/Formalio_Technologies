@@ -15,10 +15,10 @@ const sentryPlugin: NonNullable<ExpoConfig["plugins"]> =
         ],
       ]
     : [];
-const easOwner = process.env.EXPO_PUBLIC_EAS_OWNER ?? "yongjustice";
+const easOwner = process.env.EXPO_PUBLIC_EAS_OWNER ?? "yong-justice";
 const easProjectId =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
-  (process.env.EXPO_PUBLIC_EAS_OWNER ? undefined : "792092c6-07a1-4608-933f-bcc618880a62");
+  (process.env.EXPO_PUBLIC_EAS_OWNER ? undefined : "dc7248ab-7ff6-4aa5-96f4-5790e454fb63");
 
 const config: ExpoConfig = {
   name: "Formalio",

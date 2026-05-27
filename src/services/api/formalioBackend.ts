@@ -362,16 +362,41 @@ function nextAttempt(minutes: number) {
 }
 
 function mapTransaction(row: any): PrototypeTransaction {
+  const type =
+    row.type === 'expense'
+      ? 'expense'
+      : row.type === 'retrait'
+        ? 'retrait'
+        : row.type === 'fiche_reconciliation'
+          ? 'fiche_reconciliation'
+          : 'income';
+
   return {
     id: row.id,
     date: String(row.transaction_date ?? row.occurred_at ?? '').slice(0, 10),
     description: row.description ?? 'Transaction',
     category: row.categories?.name ?? row.metadata?.category ?? 'Autres',
-    type: row.type === 'expense' ? 'expense' : 'income',
+    type,
     amount: Number(row.amount ?? 0),
     method: row.payment_method ?? 'Mobile Money',
     status: row.status ?? 'completed',
   };
+}
+
+function isInvalidSessionError(error: unknown) {
+  const shaped = toSupabaseLikeError(error);
+  const raw = getRawErrorMessage(error).toLowerCase();
+  const message = shaped.message?.toLowerCase() ?? '';
+  return (
+    Number(shaped.status ?? 0) === 401 ||
+    raw.includes('invalid token') ||
+    raw.includes('jwt expired') ||
+    raw.includes('jwt is expired') ||
+    raw.includes('auth session missing') ||
+    raw.includes('not authenticated') ||
+    message.includes('session cloud a expire') ||
+    message.includes('session supabase indisponible')
+  );
 }
 
 function mapStockItem(row: StockItemRow): StockItem {
@@ -483,7 +508,7 @@ function mapMetrics(raw: any): CloudFinancialMetrics {
     })) : [],
     categoryBreakdown: Array.isArray(raw?.categoryBreakdown) ? raw.categoryBreakdown.map((row: any) => ({
       name: String(row.name ?? 'Autres'),
-      type: row.type === 'expense' ? 'expense' : 'income',
+      type: row.type === 'expense' || row.type === 'retrait' ? 'expense' : 'income',
       amount: toNumber(row.amount),
       share: toNumber(row.share),
     })) : [],
@@ -730,6 +755,7 @@ async function requestProgressiveEmailVerification(email?: string, reason: 'sign
 export const formalioBackend = {
   isConfigured: isSupabaseConfigured,
   friendlyAuthMessage,
+  isInvalidSessionError,
   describeError(error: unknown, source = 'cloud') {
     return describeSupabaseError(error, 'Synchronisation cloud indisponible.', source);
   },
@@ -1123,6 +1149,9 @@ export const formalioBackend = {
       .channel(`company-live-${companyId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stock_items', filter: `company_id=eq.${companyId}` }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'treasury_records', filter: `company_id=eq.${companyId}` }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fiches', filter: `company_id=eq.${companyId}` }, onChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'versements', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reports', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'loan_requests', filter: `company_id=eq.${companyId}` }, onChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'documents', filter: `company_id=eq.${companyId}` }, onChange)

@@ -1,6 +1,7 @@
 export {
   createLocalRepository,
   getOutboxItems,
+  getOutboxItemCount,
   getSyncState,
   markLocalRecordConflict,
   markLocalRecordFailed,

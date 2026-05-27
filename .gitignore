@@ -19,3 +19,7 @@ coverage/
 .env
 .env.*
 !.env.example
+android/local.properties
+emulator-current/
+emulator-screens/
+web-screens/

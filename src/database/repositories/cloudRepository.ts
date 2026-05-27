@@ -30,6 +30,18 @@ const timestampColumns = new Set([
   'shared_at',
 ]);
 
+const localOnlyColumns = new Set([
+  'local_id',
+  'cloud_id',
+  'last_synced_at',
+  'sync_action',
+  'sync_attempts',
+  'sync_error',
+  'created_offline',
+  'updated_offline',
+  'device_id',
+]);
+
 const companyIdCache = new Map<string, string | null>();
 
 function toCloudTimestamp(value: unknown) {
@@ -46,6 +58,10 @@ function fromCloudTimestamp(value: unknown) {
     return Number.isNaN(parsed) ? value : parsed;
   }
   return value;
+}
+
+function isUuid(value: unknown) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 async function getPrimaryCompanyId(userId: string) {
@@ -76,6 +92,7 @@ function filterKnownColumns(tableName: DatabaseTableName, record: Record<string,
 
   for (const [key, value] of Object.entries(record)) {
     if (!allowed.has(key)) continue;
+    if (localOnlyColumns.has(key)) continue;
     result[key] = timestampColumns.has(key) ? toCloudTimestamp(value) : value;
   }
 
@@ -85,6 +102,10 @@ function filterKnownColumns(tableName: DatabaseTableName, record: Record<string,
 async function toCloudRecord(tableName: DatabaseTableName, record: AnyRecord) {
   const payload = filterKnownColumns(tableName, record);
   const companyId = typeof payload.company_id === 'string' ? payload.company_id : await getPrimaryCompanyId(record.user_id);
+
+  if (tableName === 'transactions' && !isUuid(payload.id)) {
+    delete payload.id;
+  }
 
   if (companyId) {
     payload.company_id = companyId;
@@ -135,9 +156,22 @@ function fromCloudRecord<T extends AnyRecord>(tableName: DatabaseTableName, reco
     local.selling_price_per_unit = local.selling_price_per_unit ?? record.unit_price ?? 0;
   }
 
+  if (tableName === 'ai_conversations') {
+    local.session_id = local.session_id ?? record.session_id ?? record.id;
+    local.role = local.role ?? record.role ?? 'assistant';
+    local.content = local.content ?? record.content ?? '';
+  }
+
   local.is_synced = true;
   local.sync_status = 'synced';
   local.synced_at = Date.now();
+  local.last_synced_at = Date.now();
+  local.sync_action = null;
+  local.sync_attempts = 0;
+  local.sync_error = null;
+  local.created_offline = false;
+  local.updated_offline = false;
+  local.cloud_id = typeof record.id === 'string' ? record.id : local.cloud_id;
   local.version = Number(local.version ?? 1);
 
   return local as T;

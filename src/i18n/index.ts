@@ -295,6 +295,47 @@ const englishRuntimeText: Record<string, string> = {
   'La conformité Formalio examine le dossier préparé.': 'Formalio compliance is reviewing the prepared dossier.',
 };
 
+const englishRuntimeTextOverrides: Record<string, string> = {
+  'Se connecter': 'Sign in',
+  'Connexion...': 'Signing in...',
+  'Connexion réussie': 'Signed in',
+  'Compte créé !': 'Account created',
+  'Bienvenue sur Formalio': 'Welcome to Formalio',
+  'Nouvelle Transaction': 'New Transaction',
+  'Nouvelle transaction': 'New transaction',
+  'Champs manquants': 'Missing fields',
+  'Montant et description requis': 'Amount and description are required',
+  'Transaction gardée localement': 'Transaction saved locally',
+  'Formalio la synchronisera automatiquement au retour du réseau.': 'Formalio will sync it automatically when the network returns.',
+  'Mode hors ligne': 'Offline mode',
+  'Mode en ligne': 'Online mode',
+  'Vous pouvez continuer à travailler.': 'You can keep working.',
+  'Vos données sont prêtes à se synchroniser.': 'Your data is ready to sync.',
+  Online: 'Online',
+  Offline: 'Offline',
+  'Données non synchronisées': 'Unsynced data',
+  'Se déconnecter': 'Log out',
+  'Session expirée': 'Session expired',
+  'Reconnectez-vous pour continuer la synchronisation.': 'Sign in again to continue syncing.',
+  'Montant (FCFA)': 'Amount (FCFA)',
+  Description: 'Description',
+  Date: 'Date',
+  'Quantité vendue': 'Quantity sold',
+  'Sélectionner un article...': 'Select an item...',
+  'Rechercher un article...': 'Search item...',
+  'Revenue Source': 'Revenue source',
+  Stock: 'Stock',
+  Service: 'Service',
+  'Article requis': 'Item required',
+  'Sélectionnez un article en stock.': 'Select an item in stock.',
+  'Rupture de stock': 'Out of stock',
+  'Cet article ne peut pas être vendu.': 'This item cannot be sold.',
+  'Quantité invalide': 'Invalid quantity',
+  'Entrez au moins 1 unité vendue.': 'Enter at least 1 unit sold.',
+  'Prix requis': 'Price required',
+  'Entrez le prix de vente unitaire.': 'Enter the unit sale price.',
+};
+
 const englishRuntimePatterns: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/^(\d+) résultat(s?)$/, (match) => `${match[1]} result${match[2] ? 's' : ''}`],
   [/^Derniere sync: (.+)\.$/, (match) => `Last sync: ${match[1]}.`],
@@ -314,12 +355,19 @@ export function localizeRuntimeText(language: SupportedLanguage | undefined, val
   const leading = repaired.match(/^\s*/)?.[0] ?? '';
   const trailing = repaired.match(/\s*$/)?.[0] ?? '';
   const core = repaired.trim();
-  const exact = englishRuntimeText[core];
+  const rawCore = value.trim();
+  const exact =
+    englishRuntimeTextOverrides[core] ??
+    englishRuntimeTextOverrides[rawCore] ??
+    englishRuntimeText[core] ??
+    englishRuntimeText[rawCore];
   if (exact) return `${leading}${exact}${trailing}`;
 
-  for (const [pattern, replacer] of englishRuntimePatterns) {
-    const match = core.match(pattern);
-    if (match) return `${leading}${replacer(match)}${trailing}`;
+  for (const candidate of [core, rawCore]) {
+    for (const [pattern, replacer] of englishRuntimePatterns) {
+      const match = candidate.match(pattern);
+      if (match) return `${leading}${replacer(match)}${trailing}`;
+    }
   }
 
   return repaired;

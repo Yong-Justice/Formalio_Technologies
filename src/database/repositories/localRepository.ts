@@ -116,6 +116,15 @@ export async function getOutboxItems(userId: string, tableName?: DatabaseTableNa
   );
 }
 
+export async function getOutboxItemCount(userId: string) {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM sync_outbox WHERE user_id = ?',
+    userId,
+  );
+  return Number(row?.count ?? 0);
+}
+
 export async function markOutboxItemSynced(item: SyncOutboxItem) {
   const db = await getDatabase();
   await db.runAsync('DELETE FROM sync_outbox WHERE id = ?', item.id);
@@ -139,6 +148,14 @@ export async function markOutboxItemFailed(item: SyncOutboxItem, error: unknown)
     message,
     now(),
     item.id,
+  );
+  await db.runAsync(
+    `UPDATE ${item.table_name}
+     SET sync_attempts = COALESCE(sync_attempts, 0) + 1, sync_error = ?
+     WHERE id = ? AND user_id = ?`,
+    message,
+    item.record_id,
+    item.user_id,
   );
 }
 
@@ -219,7 +236,9 @@ export async function markLocalRecordSynced(tableName: DatabaseTableName, record
   await db.runAsync(
     `UPDATE ${tableName}
      SET is_synced = 1, sync_status = 'synced', synced_at = ?, updated_at = COALESCE(updated_at, ?)
+     , last_synced_at = ?, sync_action = NULL, sync_attempts = 0, sync_error = NULL, created_offline = 0, updated_offline = 0
      WHERE id = ? AND user_id = ?`,
+    now(),
     now(),
     now(),
     recordId,
@@ -230,7 +249,7 @@ export async function markLocalRecordSynced(tableName: DatabaseTableName, record
 export async function markLocalRecordFailed(tableName: DatabaseTableName, recordId: string, userId: string) {
   const db = await getDatabase();
   await db.runAsync(
-    `UPDATE ${tableName} SET is_synced = 0, sync_status = 'failed' WHERE id = ? AND user_id = ?`,
+    `UPDATE ${tableName} SET is_synced = 0, sync_status = 'failed', sync_error = COALESCE(sync_error, 'Sync failed') WHERE id = ? AND user_id = ?`,
     recordId,
     userId,
   );
@@ -266,13 +285,21 @@ export function createLocalRepository<T extends LocalRow>(tableName: DatabaseTab
       const record = {
         id: input.id ?? createUuid(),
         ...input,
+        local_id: input.local_id ?? input.id ?? null,
+        cloud_id: input.cloud_id ?? null,
         created_at: input.created_at ?? timestamp,
         updated_at: input.updated_at ?? timestamp,
         deleted_at: input.deleted_at ?? null,
         synced_at: input.synced_at ?? null,
         is_synced: false,
-        sync_status: 'pending',
+        sync_status: input.deleted_at ? 'deleted_pending' : 'pending',
+        sync_action: input.deleted_at ? 'delete' : 'create',
+        sync_attempts: input.sync_attempts ?? 0,
+        sync_error: null,
+        created_offline: input.created_offline ?? true,
+        updated_offline: input.updated_offline ?? false,
         version: input.version ?? 1,
+        device_id: input.device_id ?? deviceId,
         last_modified_device_id: input.last_modified_device_id ?? deviceId,
       } as LocalRow;
       const serialized = serializeRecord(tableName, record);
@@ -322,8 +349,12 @@ export function createLocalRepository<T extends LocalRow>(tableName: DatabaseTab
         ...patch,
         updated_at: timestamp,
         is_synced: false,
-        sync_status: 'pending',
+        sync_status: patch.deleted_at ? 'deleted_pending' : 'pending',
+        sync_action: patch.deleted_at ? 'delete' : 'update',
+        updated_offline: true,
+        sync_error: null,
         version: Number(existing.version ?? 0) + 1,
+        device_id: deviceId,
         last_modified_device_id: deviceId,
       } as Record<string, unknown>;
       const serialized = serializeRecord(tableName, next);
@@ -354,8 +385,12 @@ export function createLocalRepository<T extends LocalRow>(tableName: DatabaseTab
         deleted_at: timestamp,
         updated_at: timestamp,
         is_synced: false,
-        sync_status: 'pending',
+        sync_status: 'deleted_pending',
+        sync_action: 'delete',
+        updated_offline: true,
+        sync_error: null,
         version: Number(existing.version ?? 0) + 1,
+        device_id: deviceId,
         last_modified_device_id: deviceId,
       };
 

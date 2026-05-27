@@ -1,7 +1,7 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useGlobalSearchParams, usePathname } from 'expo-router';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { analytics } from '@/services/analytics/analytics.service';
@@ -44,10 +44,12 @@ function AppBoot() {
   const selectedBusinessId = useFinanceStore((s) => s.selectedBusinessId);
 
   React.useEffect(() => {
-    hydrateAuth();
-    void initializeDatabase().catch((error) => {
-      observability.captureException(error, { operation: 'database_boot' });
-    });
+    void hydrateAuth();
+    if (Platform.OS !== 'web') {
+      void initializeDatabase().catch((error) => {
+        observability.captureException(error, { operation: 'database_boot' });
+      });
+    }
 
     const timer = setTimeout(() => {
       hydrateFinance();
@@ -71,6 +73,7 @@ function AppBoot() {
 
   React.useEffect(() => {
     if (!user) return;
+    if (Platform.OS === 'web') return;
     const telemetryUser = user as typeof user & { businessId?: string };
     const companyId = selectedBusinessId ?? telemetryUser.businessId ?? null;
     void importLegacyCaches(user.id, companyId).catch((error) => {
@@ -112,7 +115,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <QueryClientProvider client={queryClient}>
             <AppBoot />
             <NavigationTelemetry />
-            <OfflineSyncBoot />
+            {Platform.OS !== 'web' ? <OfflineSyncBoot /> : null}
             {children}
           </QueryClientProvider>
         </ThemeProvider>

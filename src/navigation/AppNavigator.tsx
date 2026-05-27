@@ -1,5 +1,4 @@
 import '@/services/observability/sentry';
-import '@/styles/global.css';
 import 'react-native-reanimated';
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
@@ -11,6 +10,10 @@ import { useAuthStore } from '@/store/authStore';
 import { Sentry } from '@/services/observability/sentry';
 
 import { vexo } from 'vexo-analytics';
+
+if (process.env.FORMALIO_FAST_WEB_PREVIEW !== '1') {
+  require('@/styles/global.css');
+}
 
 // Initialize Vexo at the root level, outside of any component
 if (__DEV__ === false) {
@@ -38,9 +41,24 @@ function RootLayout() {
           }}
         >
           <Stack.Screen name="index" />
-          <Stack.Screen name="(onboarding)" />
+          <Stack.Screen name="(onboarding)/index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="FicheScreen" options={{ headerShown: false }} />
+          <Stack.Screen name="FicheDetail" options={{ headerShown: false }} />
+          <Stack.Screen name="RetraitScreen" options={{ headerShown: false }} />
+          <Stack.Screen name="VersementsScreen" options={{ headerShown: false }} />
+          <Stack.Screen name="DataRestoreScreen" options={{ headerShown: false, gestureEnabled: false }} />
+          <Stack.Screen name="TermsAndConditions" options={{ headerShown: false }} />
+          <Stack.Screen name="PrivacyPolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="CookiePolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="AcceptableUsePolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="RefundSubscriptionPolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="CommunityGuidelines" options={{ headerShown: false }} />
+          <Stack.Screen name="DmcaPolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="DataRetentionPolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="SecurityPolicy" options={{ headerShown: false }} />
+          <Stack.Screen name="RegulatoryCompliance" options={{ headerShown: false }} />
           <Stack.Screen name="modals/loan-request" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="modals/transaction-detail" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="modals/security-alert" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />

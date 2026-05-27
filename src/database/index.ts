@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { runMigrations } from '@/database/migrations';
 import { createUuid } from '@/utils/uuid';
@@ -11,6 +11,10 @@ let databasePromise: Promise<SQLiteDatabase> | null = null;
 let deviceIdPromise: Promise<string> | null = null;
 
 async function openDatabase() {
+  if (Platform.OS === 'web') {
+    throw new Error('SQLite local database is only available in native builds.');
+  }
+  const SQLite = require('expo-sqlite') as typeof import('expo-sqlite');
   const db = await SQLite.openDatabaseAsync(DATABASE_NAME);
   await db.execAsync('PRAGMA foreign_keys = ON;');
   await runMigrations(db);

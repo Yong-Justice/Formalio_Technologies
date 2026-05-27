@@ -3,7 +3,7 @@ export type Transaction = {
   date: string;
   description: string;
   category: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'fiche_reconciliation' | 'retrait';
   amount: number;
   method: string;
   status: string;

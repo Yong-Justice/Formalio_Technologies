@@ -2,35 +2,42 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, processLock } from '@supabase/supabase-js';
 import { Env } from '@/constants/config';
 
 export const isSupabaseConfigured = Boolean(Env.supabaseUrl && Env.supabasePublishableKey);
 
 const sessionStorage = {
   async getItem(key: string) {
+    if (Platform.OS === 'web') return AsyncStorage.getItem(key);
     try {
-      const secureValue = await SecureStore.getItemAsync(key);
-      if (secureValue != null) return secureValue;
+      return await SecureStore.getItemAsync(key);
     } catch {
-      // SecureStore can be unavailable on web/some emulators; AsyncStorage keeps Expo dev builds working.
+      return null;
     }
-    return AsyncStorage.getItem(key);
   },
   async setItem(key: string, value: string) {
+    if (Platform.OS === 'web') {
+      await AsyncStorage.setItem(key, value);
+      return;
+    }
     try {
       await SecureStore.setItemAsync(key, value);
       await AsyncStorage.removeItem(key);
       return;
     } catch {
-      await AsyncStorage.setItem(key, value);
+      // Native auth tokens must not be downgraded to plain AsyncStorage.
     }
   },
   async removeItem(key: string) {
+    if (Platform.OS === 'web') {
+      await AsyncStorage.removeItem(key);
+      return;
+    }
     try {
       await SecureStore.deleteItemAsync(key);
     } catch {
-      // Ignore SecureStore cleanup failures and still clear the AsyncStorage fallback.
+      // Ignore SecureStore cleanup failures and still clear any older fallback.
     }
     await AsyncStorage.removeItem(key);
   },
@@ -43,6 +50,7 @@ export const supabase = createClient(Env.supabaseUrl || 'https://placeholder.sup
     persistSession: true,
     detectSessionInUrl: false,
     flowType: 'pkce',
+    lock: processLock,
   },
   realtime: {
     params: {

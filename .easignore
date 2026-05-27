@@ -16,3 +16,9 @@ coverage
 .env
 .env.*
 !.env.example
+emulator-current
+emulator-current/**
+emulator-screens
+emulator-screens/**
+web-screens
+web-screens/**

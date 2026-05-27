@@ -12,12 +12,21 @@ export type TableDefinition = {
 };
 
 const syncColumns: Record<string, SqlColumnType> = {
+  local_id: 'TEXT',
+  cloud_id: 'TEXT',
   company_id: 'TEXT',
   is_synced: 'INTEGER',
   sync_status: 'TEXT',
+  sync_action: 'TEXT',
+  sync_attempts: 'INTEGER',
+  sync_error: 'TEXT',
   synced_at: 'INTEGER',
+  last_synced_at: 'INTEGER',
   deleted_at: 'INTEGER',
+  created_offline: 'INTEGER',
+  updated_offline: 'INTEGER',
   version: 'INTEGER',
+  device_id: 'TEXT',
   last_modified_device_id: 'TEXT',
 };
 
@@ -30,7 +39,7 @@ const commonColumns: Record<string, SqlColumnType> = {
 };
 
 const commonRequired = ['id', 'user_id', 'created_at', 'updated_at'];
-const commonBoolean = ['is_synced'];
+const commonBoolean = ['is_synced', 'created_offline', 'updated_offline'];
 const commonIndexes = ['user_id', 'company_id', 'updated_at', 'sync_status', 'deleted_at'];
 
 function table(
@@ -333,10 +342,51 @@ export const tableDefinitions = [
     },
     { requiredColumns: ['report_type', 'generated_at'], indexedColumns: ['report_type', 'generated_at'] },
   ),
+  table(
+    'fiches',
+    {
+      fiche_type: 'TEXT',
+      period_type: 'TEXT',
+      date_debut: 'TEXT',
+      date_fin: 'TEXT',
+      stock_items_json: 'TEXT',
+      service_items_json: 'TEXT',
+      expenses_json: 'TEXT',
+      revenus_theoriques: 'REAL',
+      total_depenses: 'REAL',
+      caisse_attendue: 'REAL',
+      caisse_reelle: 'REAL',
+      ecart: 'REAL',
+      ecart_percentage: 'REAL',
+      ecart_level: 'TEXT',
+      ecart_justification: 'TEXT',
+      ecart_category: 'TEXT',
+      status: 'TEXT',
+    },
+    {
+      requiredColumns: ['fiche_type', 'period_type', 'date_debut', 'date_fin', 'status'],
+      indexedColumns: ['date_debut', 'date_fin', 'status', 'fiche_type'],
+    },
+  ),
+  table(
+    'versements',
+    {
+      montant: 'REAL',
+      destination: 'TEXT',
+      destination_label: 'TEXT',
+      description: 'TEXT',
+      versement_date: 'TEXT',
+      versement_time: 'TEXT',
+    },
+    {
+      requiredColumns: ['montant', 'destination', 'destination_label', 'versement_date', 'versement_time'],
+      indexedColumns: ['destination', 'versement_date'],
+    },
+  ),
 ] as const satisfies readonly TableDefinition[];
 
 export const databaseSchema = {
-  version: 1,
+  version: 4,
   tables: tableDefinitions,
 } as const;
 

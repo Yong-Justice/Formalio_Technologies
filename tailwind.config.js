@@ -1,7 +1,11 @@
+const fastWebPreview = process.env.FORMALIO_FAST_WEB_PREVIEW === '1';
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   presets: [require('nativewind/preset')],
-  content: ['./app/**/*.{js,jsx,ts,tsx}', './src/**/*.{js,jsx,ts,tsx}'],
+  content: fastWebPreview
+    ? ['./app/index.tsx', './src/screens/prototype/**/*.{js,jsx,ts,tsx}']
+    : ['./app/**/*.{js,jsx,ts,tsx}', './src/**/*.{js,jsx,ts,tsx}'],
   theme: {
     extend: {
       colors: {

@@ -1,21 +1,26 @@
 import { useEffect, useRef } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
 import { analytics } from '@/services/analytics/analytics.service';
 import { notificationService } from '@/services/notifications/notificationService';
 import { observability } from '@/services/observability/observability.service';
 import { flushOfflineQueue, getOfflineQueue } from './offlineQueue';
 import { syncAllTables } from './databaseSync';
+import { getCurrentSyncUserId } from './syncIdentity';
 import { useNetworkStore } from './network';
 
-const SYNC_INTERVAL_MS = 30_000;
+const SYNC_INTERVAL_MS = 5 * 60_000;
 
-async function flushAndReport(source: 'online_resume' | 'foreground_interval') {
+let activeFlush: Promise<Awaited<ReturnType<typeof runFlushAndReport>>> | null = null;
+
+async function runFlushAndReport(source: 'online_resume' | 'foreground_interval') {
   try {
     const queued = getOfflineQueue().length > 0;
     const result = queued ? await flushOfflineQueue() : { succeeded: 0, failed: 0, remaining: 0 };
-    const userId = useAuthStore.getState().user?.id;
-    const databaseResult = await syncAllTables(userId);
+    const userId = await getCurrentSyncUserId(useAuthStore.getState().user?.id);
+    const databaseResult = Platform.OS === 'web'
+      ? { pushed: 0, pulled: 0, failed: 0, conflicts: 0 }
+      : await syncAllTables(userId);
     const succeeded = result.succeeded + databaseResult.pushed + databaseResult.pulled;
 
     if (succeeded > 0 || databaseResult.conflicts > 0 || databaseResult.failed > 0) {
@@ -33,11 +38,19 @@ async function flushAndReport(source: 'online_resume' | 'foreground_interval') {
   }
 }
 
+async function flushAndReport(source: 'online_resume' | 'foreground_interval') {
+  if (activeFlush) return activeFlush;
+  activeFlush = runFlushAndReport(source).finally(() => {
+    activeFlush = null;
+  });
+  return activeFlush;
+}
+
 /**
  * Mount once at app root. Handles:
  * 1. NetInfo listener (keeps isOnline accurate)
  * 2. Immediate flush when device comes back online
- * 3. 30s polling while foregrounded; stops in background to save battery
+ * 3. Periodic polling while foregrounded; stops in background to save battery
  */
 export function useOfflineSync() {
   const isOnline = useNetworkStore((state) => state.isOnline);

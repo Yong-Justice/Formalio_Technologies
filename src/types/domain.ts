@@ -1,5 +1,5 @@
 export type Language = 'fr' | 'en' | 'pcm';
-  export type TransactionType = 'income' | 'expense';
+export type TransactionType = 'income' | 'expense' | 'fiche_reconciliation' | 'retrait';
   export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed' | 'conflict';
   export interface User { id: string; phone: string; email?: string; fullName: string; language: Language; onboardingCompleted: boolean; biometricEnabled: boolean; }
   export interface Business { id: string; name: string; type: string; city: string; country: string; taxRegime?: string; }

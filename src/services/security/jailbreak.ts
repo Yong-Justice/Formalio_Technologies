@@ -1,5 +1,6 @@
+import axios from "axios";
 import { Platform } from "react-native";
-import { apiClient } from "@/services/api/client";
+import { Env } from "@/constants/config";
 import { secureStorage, secureKeys } from "@/services/storage/secureStorage";
 import { auditStorage } from "@/services/storage/mmkv";
 
@@ -41,12 +42,18 @@ function writeAuditLog(reasons: string[]) {
 async function reportToBackend(reasons: string[]) {
   try {
     const userId = await secureStorage.get(secureKeys.userId);
-    await apiClient.post("/v1/security/device-integrity", {
+    await axios.post(`${Env.apiBaseUrl}/v1/security/device-integrity`, {
       userId,
       isCompromised: true,
       reasons,
       platform: Platform.OS,
       reportedAt: new Date().toISOString(),
+    }, {
+      timeout: 10_000,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client": "formalio-mobile",
+      },
     });
   } catch {
     // The device may be offline; local audit logging still preserves the event.

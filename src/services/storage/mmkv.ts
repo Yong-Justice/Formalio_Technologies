@@ -43,6 +43,7 @@ function createStorage(id: string): SyncStorage {
 
   export const storageKeys = {
     authUser: "auth.user",
+    offlineAuthSnapshot: "auth.offlineSnapshot",
     onboardingCompleted: "prefs.onboardingCompleted",
     language: "prefs.language",
     auth: { user: "auth.user" },

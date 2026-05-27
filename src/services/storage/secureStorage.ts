@@ -1,9 +1,11 @@
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 export const secureKeys = {
   accessToken: "formalio.accessToken",
   refreshToken: "formalio.refreshToken",
   biometricEnrollment: "formalio.biometricEnrollment",
+  offlineAuthSession: "formalio.offlineAuthSession",
   userId: "formalio.userId",
   expoPushToken: "formalio.expoPushToken",
   pushTokenSyncedAt: "formalio.pushTokenSyncedAt",
@@ -24,11 +26,13 @@ const REFRESH_TOKEN_OPTIONS: SecureStore.SecureStoreOptions = {
 const fallbackValues = new Map<string, string>();
 
 function getFallbackValue(key: string) {
+  if (Platform.OS !== "web") return null;
   if (typeof localStorage !== "undefined") return localStorage.getItem(key);
   return fallbackValues.get(key) ?? null;
 }
 
 function setFallbackValue(key: string, value: string) {
+  if (Platform.OS !== "web") return;
   if (typeof localStorage !== "undefined") {
     localStorage.setItem(key, value);
     return;
@@ -38,6 +42,7 @@ function setFallbackValue(key: string, value: string) {
 }
 
 function removeFallbackValue(key: string) {
+  if (Platform.OS !== "web") return;
   if (typeof localStorage !== "undefined") {
     localStorage.removeItem(key);
     return;

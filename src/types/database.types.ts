@@ -1,4 +1,5 @@
-export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed' | 'conflict';
+export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed' | 'conflict' | 'deleted_pending';
+export type SyncAction = 'create' | 'update' | 'delete';
 
 export type DatabaseTableName =
   | 'business_profiles'
@@ -13,19 +14,30 @@ export type DatabaseTableName =
   | 'loan_repayments'
   | 'tax_obligations'
   | 'ai_conversations'
-  | 'generated_reports';
+  | 'generated_reports'
+  | 'fiches'
+  | 'versements';
 
 export interface SyncableRecord {
   id: string;
+  local_id?: string | null;
+  cloud_id?: string | null;
   user_id: string;
   company_id?: string | null;
   created_at: number;
   updated_at?: number;
   deleted_at?: number | null;
   synced_at?: number | null;
+  last_synced_at?: number | null;
   is_synced: boolean;
   sync_status: SyncStatus;
+  sync_action?: SyncAction | null;
+  sync_attempts?: number | null;
+  sync_error?: string | null;
+  created_offline?: boolean;
+  updated_offline?: boolean;
   version: number;
+  device_id?: string | null;
   last_modified_device_id?: string | null;
 }
 
